@@ -1,0 +1,46 @@
+{
+  "name": "ledgerflow-backend",
+  "version": "1.0.0",
+  "description": "Backend API service for LedgerFlow Invoice System",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "prisma studio",
+    "seed": "node prisma/seed.js",
+    "test:phase2": "node src/scripts/testPhase2.js",
+    "test:phase3": "node src/scripts/testPhase3.js",
+    "test:phase4": "node src/scripts/testPhase4.js",
+    "test:phase5": "node src/scripts/testPhase5.js",
+    "test:phase6": "node src/scripts/testPhase6.js",
+    "test:phase7": "node src/scripts/testPhase7.js",
+    "test:purchases": "node src/scripts/testPhase8Purchases.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "keywords": [
+    "ledgerflow",
+    "invoicing",
+    "express",
+    "prisma",
+    "mysql"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^6.4.1",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "prisma": "^6.4.1"
+  }
+}
