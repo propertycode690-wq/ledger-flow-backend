@@ -3,6 +3,27 @@ import prisma from '../config/db.js';
 import { getNextPurchaseNumber, getNextSupplierId, getNextTransactionNumber } from '../utils/sequence.js';
 import { round2 } from '../utils/money.js';
 
+/**
+ * Strict calendar date schema ensuring exact YYYY-MM-DD formatting and real Gregorian calendar validity.
+ * Rejects impossible dates (e.g., 2026-02-30, 2026-04-31, 2026-99-99, non-leap 2025-02-29).
+ */
+export const calendarDateSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be in YYYY-MM-DD format.')
+  .refine(
+    (val) => {
+      const [y, m, d] = val.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      return (
+        dt.getUTCFullYear() === y &&
+        dt.getUTCMonth() === m - 1 &&
+        dt.getUTCDate() === d
+      );
+    },
+    { message: 'date must be a valid calendar date.' }
+  );
+
 export const purchaseItemSchema = z.object({
   productId: z.string().trim().max(50).optional().nullable(),
   product: z.string().trim().min(1, 'Product description or name is required.').max(255),
@@ -16,7 +37,7 @@ export const createPurchaseSchema = z.object({
   supplierId: z.string().trim().max(50).optional().nullable(),
   supplierName: z.string().trim().min(1, 'Supplier name is required.').max(255),
   supplierInvoiceNo: z.string().trim().max(100).optional().nullable(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be in YYYY-MM-DD format.').optional(),
+  date: calendarDateSchema.optional(),
   status: z.enum(['Paid', 'Pending', 'Cancelled']).default('Paid'),
   notes: z.string().trim().optional().nullable(),
   items: z.array(purchaseItemSchema).min(1, 'Purchase bill must contain at least one line item.'),
@@ -26,7 +47,7 @@ export const updatePurchaseSchema = z.object({
   supplierId: z.string().trim().max(50).optional().nullable(),
   supplierName: z.string().trim().min(1).max(255).optional(),
   supplierInvoiceNo: z.string().trim().max(100).optional().nullable(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be in YYYY-MM-DD format.').optional(),
+  date: calendarDateSchema.optional(),
   status: z.enum(['Paid', 'Pending', 'Cancelled']).optional(),
   notes: z.string().trim().optional().nullable(),
   items: z.array(purchaseItemSchema).min(1).optional(),
@@ -50,7 +71,7 @@ export const batchImportSchema = z.object({
       purchaseNumber: z.string().optional(),
       supplierName: z.string().trim().min(1),
       supplierInvoiceNo: z.string().trim().optional().nullable(),
-      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be in YYYY-MM-DD format.').optional(),
+      date: calendarDateSchema.optional(),
       status: z.string().optional(),
       subtotal: z.coerce.number().optional(),
       vatAmount: z.coerce.number().optional(),

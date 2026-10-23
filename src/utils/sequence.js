@@ -285,10 +285,10 @@ export async function getNextTransactionNumber(tx, year = new Date().getFullYear
     // If no counter row exists yet, check highest existing transaction for this prefix numerically
     try {
       const rows = await tx.$queryRaw`
-        SELECT transaction_number AS txnNum 
-        FROM transactions 
+        SELECT transaction_number AS txnNum
+        FROM transactions
         WHERE transaction_number LIKE ${prefix + '%'}
-        ORDER BY CHAR_LENGTH(transaction_number) DESC, transaction_number DESC 
+        ORDER BY CHAR_LENGTH(transaction_number) DESC, transaction_number DESC
         LIMIT 1
       `;
       if (Array.isArray(rows) && rows.length > 0 && rows[0]?.txnNum) {
