@@ -439,4 +439,70 @@ model ProcurementFulfillment {
   @@map("procurement_fulfillments")
 }
 
+// In-app notifications with user & role scoping
+model Notification {
+  id          String   @id @default(cuid()) @db.VarChar(36)
+  userId      String?  @map("user_id") @db.VarChar(36)
+  role        String?  @db.VarChar(50) // 'admin', 'accountant', 'customer', or null for all
+  customerId  String?  @map("customer_id") @db.VarChar(50)
+  type        String   @default("info") @db.VarChar(20) // 'info', 'success', 'warning', 'danger'
+  title       String   @db.VarChar(255)
+  description String   @db.Text
+  link        String?  @db.VarChar(255)
+  isRead      Boolean  @default(false) @map("is_read")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId], map: "idx_notifications_user_id")
+  @@index([role], map: "idx_notifications_role")
+  @@index([customerId], map: "idx_notifications_customer_id")
+  @@index([isRead], map: "idx_notifications_is_read")
+  @@index([createdAt], map: "idx_notifications_created_at")
+  @@map("notifications")
+}
+
+// Enterprise audit trail tracking business events
+model AuditLog {
+  id         String   @id @default(cuid()) @db.VarChar(36)
+  userId     String?  @map("user_id") @db.VarChar(36)
+  userEmail  String?  @map("user_email") @db.VarChar(255)
+  userRole   String?  @map("user_role") @db.VarChar(50)
+  action     String   @db.VarChar(100)
+  entityType String   @map("entity_type") @db.VarChar(50)
+  entityId   String?  @map("entity_id") @db.VarChar(50)
+  details    String?  @db.Text
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([action], map: "idx_audit_logs_action")
+  @@index([entityType, entityId], map: "idx_audit_logs_entity")
+  @@index([userId], map: "idx_audit_logs_user_id")
+  @@index([createdAt], map: "idx_audit_logs_created_at")
+  @@map("audit_logs")
+}
+
+// HMRC quarterly VAT returns archiving and submission history
+model VatReturn {
+  id             String    @id @default(cuid()) @db.VarChar(36)
+  periodKey      String    @unique @map("period_key") @db.VarChar(50)
+  periodLabel    String    @map("period_label") @db.VarChar(100)
+  startDate      DateTime  @map("start_date") @db.Date
+  endDate        DateTime  @map("end_date") @db.Date
+  collectedVat   Decimal   @default(0.00) @map("collected_vat") @db.Decimal(12, 2)
+  paidVat        Decimal   @default(0.00) @map("paid_vat") @db.Decimal(12, 2)
+  netVatDue      Decimal   @default(0.00) @map("net_vat_due") @db.Decimal(12, 2)
+  totalSales     Decimal   @default(0.00) @map("total_sales") @db.Decimal(12, 2)
+  totalPurchases Decimal   @default(0.00) @map("total_purchases") @db.Decimal(12, 2)
+  status         String    @default("Draft") @db.VarChar(50)
+  submittedAt    DateTime? @map("submitted_at")
+  submittedBy    String?   @map("submitted_by") @db.VarChar(255)
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([status], map: "idx_vat_returns_status")
+  @@index([startDate, endDate], map: "idx_vat_returns_dates")
+  @@map("vat_returns")
+}
+
 

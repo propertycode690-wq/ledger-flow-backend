@@ -263,4 +263,69 @@ export async function getNextSupplierId(tx) {
   return `${prefix}${String(assignedNumber).padStart(3, '0')}`;
 }
 
+/**
+ * Concurrency-safe atomic sequential identifier generator for general ledger transactions.
+ * Uses atomic row increments on invoice_sequences inside database transactions.
+ * Safely handles first-time yearly initialization under concurrent requests without race conditions.
+ * @param {import('@prisma/client').PrismaClient} tx Prisma transaction client
+ * @param {number} [year] Target calendar year (defaults to current year)
+ * @returns {Promise<string>} e.g. "TXN-2026-101"
+ */
+export async function getNextTransactionNumber(tx, year = new Date().getFullYear()) {
+  const validYear = typeof year === 'number' && !isNaN(year) ? Math.floor(year) : new Date().getFullYear();
+  const prefix = `TXN-${validYear}-`;
 
+  const existing = await tx.invoiceSequence.findUnique({
+    where: { prefix },
+  });
+
+  let startingNumber = 101; // Baseline: preserves mock/sample range 001-100
+
+  if (!existing) {
+    // If no counter row exists yet, check highest existing transaction for this prefix numerically
+    try {
+      const rows = await tx.$queryRaw`
+        SELECT transaction_number AS txnNum 
+        FROM transactions 
+        WHERE transaction_number LIKE ${prefix + '%'}
+        ORDER BY CHAR_LENGTH(transaction_number) DESC, transaction_number DESC 
+        LIMIT 1
+      `;
+      if (Array.isArray(rows) && rows.length > 0 && rows[0]?.txnNum) {
+        const parts = rows[0].txnNum.split('-');
+        const num = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(num)) startingNumber = Math.max(startingNumber, num + 1);
+      }
+    } catch {
+      // Safe fallback if raw query is not supported
+      const txns = await tx.transaction.findMany({
+        where: { transactionNumber: { startsWith: prefix } },
+        select: { transactionNumber: true },
+        take: 500,
+      });
+      for (const t of txns) {
+        const parts = t.transactionNumber.split('-');
+        const num = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(num) && num >= startingNumber) {
+          startingNumber = num + 1;
+        }
+      }
+    }
+  }
+
+  // Atomic upsert: In MySQL, this translates to: INSERT ... ON DUPLICATE KEY UPDATE next_number = next_number + 1.
+  // This eliminates reliance on catching P2002 errors, preventing transaction poisoning, and serializes safely.
+  const seq = await tx.invoiceSequence.upsert({
+    where: { prefix },
+    create: {
+      prefix,
+      nextNumber: startingNumber + 1,
+    },
+    update: {
+      nextNumber: { increment: 1 },
+    },
+  });
+
+  const assignedNumber = seq.nextNumber - 1;
+  return `${prefix}${String(assignedNumber).padStart(3, '0')}`;
+}

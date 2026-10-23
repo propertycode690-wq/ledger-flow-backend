@@ -21,6 +21,8 @@ export function round2(value) {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 }
 
+export const roundMoney = round2;
+
 /**
  * Calculates totals for a single invoice line item.
  * @param {number} quantity

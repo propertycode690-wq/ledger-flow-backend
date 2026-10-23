@@ -14,6 +14,9 @@ import mileageRoutes from './routes/mileage.routes.js';
 import purchaseRoutes from './routes/purchase.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
 import transactionRoutes from './routes/transaction.routes.js';
+import notificationRoutes from './routes/notification.routes.js';
+import auditLogRoutes from './routes/auditLog.routes.js';
+import reportRoutes from './routes/report.routes.js';
 
 dotenv.config();
 
@@ -79,6 +82,9 @@ app.use('/api/v1/mileage', mileageRoutes);
 app.use('/api/v1/purchases', purchaseRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/transactions', transactionRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/audit-logs', auditLogRoutes);
+app.use('/api/v1/reports', reportRoutes);
 
 // Root informational endpoint
 app.get('/', (req, res) => {

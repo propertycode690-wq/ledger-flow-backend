@@ -61,19 +61,19 @@ async function runTests() {
     console.log('📋 Setup: Authenticating Test Accounts');
     const adminLogin = await request('/api/v1/auth/login', {
       method: 'POST',
-      body: { email: 'admin@freshharvest.co.uk', password: 'Password123!' },
+      body: { email: 'admin@freshharvest.co.uk', password: '123456' },
     });
     const adminToken = adminLogin.data?.token;
 
     const accountantLogin = await request('/api/v1/auth/login', {
       method: 'POST',
-      body: { email: 'accounts@freshharvest.co.uk', password: 'Password123!' },
+      body: { email: 'accounts@freshharvest.co.uk', password: '123456' },
     });
     const accountantToken = accountantLogin.data?.token;
 
     const customerLogin = await request('/api/v1/auth/login', {
       method: 'POST',
-      body: { email: 'accounts@greenvalley.co.uk', password: 'Password123!' },
+      body: { email: 'accounts@greenvalley.co.uk', password: '123456' },
     });
     const customerToken = customerLogin.data?.token;
 

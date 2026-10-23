@@ -91,19 +91,19 @@ async function runPhase7Suite() {
     // -----------------------------------------------------------------
     console.log('📋 Test Group 1: Authentication & Session Verification');
     const adminLogin = await request('POST', '/api/v1/auth/login', {
-      body: { email: 'admin@freshharvest.co.uk', password: 'Password123!' },
+      body: { email: 'admin@freshharvest.co.uk', password: '123456' },
     });
     expect(adminLogin.status === 200, 'Admin authenticated successfully', 'Admin login failed');
     adminCookie = adminLogin.setCookie;
 
     const accountantLogin = await request('POST', '/api/v1/auth/login', {
-      body: { email: 'accounts@freshharvest.co.uk', password: 'Password123!' },
+      body: { email: 'accounts@freshharvest.co.uk', password: '123456' },
     });
     expect(accountantLogin.status === 200, 'Accountant authenticated successfully', 'Accountant login failed');
     accountantCookie = accountantLogin.setCookie;
 
     const customerLogin = await request('POST', '/api/v1/auth/login', {
-      body: { email: 'accounts@greenvalley.co.uk', password: 'Password123!' },
+      body: { email: 'accounts@greenvalley.co.uk', password: '123456' },
     });
     expect(customerLogin.status === 200, 'Customer authenticated successfully', 'Customer login failed');
     customerCookie = customerLogin.setCookie;

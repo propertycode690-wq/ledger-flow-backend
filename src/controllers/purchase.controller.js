@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import prisma from '../config/db.js';
-import { getNextPurchaseNumber, getNextSupplierId } from '../utils/sequence.js';
+import { getNextPurchaseNumber, getNextSupplierId, getNextTransactionNumber } from '../utils/sequence.js';
 import { round2 } from '../utils/money.js';
 
 export const purchaseItemSchema = z.object({
@@ -50,7 +50,7 @@ export const batchImportSchema = z.object({
       purchaseNumber: z.string().optional(),
       supplierName: z.string().trim().min(1),
       supplierInvoiceNo: z.string().trim().optional().nullable(),
-      date: z.string().optional(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be in YYYY-MM-DD format.').optional(),
       status: z.string().optional(),
       subtotal: z.coerce.number().optional(),
       vatAmount: z.coerce.number().optional(),
@@ -418,6 +418,27 @@ export async function createPurchase(req, res) {
         },
       });
 
+      // Synchronize to general accounting transactions table in MySQL
+      const txnNumber = await getNextTransactionNumber(tx, year);
+      await tx.transaction.create({
+        data: {
+          transactionNumber: txnNumber,
+          date: targetDate,
+          type: 'Purchase',
+          category: 'Wholesale Produce',
+          description: `Purchase from ${supplierName.trim()}`,
+          reference: purchaseNumber,
+          customerOrSupplier: supplierName.trim(),
+          netAmount: subtotal,
+          vatAmount: vatAmount,
+          grossAmount: total,
+          status: status === 'Cancelled' ? 'Cancelled' : 'Completed',
+          notes: supplierInvoiceNo?.trim() && notes?.trim()
+            ? `${supplierInvoiceNo.trim()} - ${notes.trim()}`
+            : (supplierInvoiceNo?.trim() || notes?.trim() || `PO ${purchaseNumber}`),
+        },
+      });
+
       return purchase;
     });
 
@@ -511,11 +532,56 @@ export async function updatePurchase(req, res) {
         });
       }
 
-      return tx.purchase.update({
+      const updatedPurchase = await tx.purchase.update({
         where: { id: existing.id },
         data: updateData,
         include: { items: true, supplier: true },
       });
+
+      // Synchronize changes to general accounting transactions table in MySQL
+      const shouldSyncTxn =
+        updateData.status ||
+        updateData.total !== undefined ||
+        updateData.date ||
+        updateData.supplierName ||
+        updateData.supplierInvoiceNo !== undefined ||
+        updateData.notes !== undefined;
+
+      if (shouldSyncTxn) {
+        const effectiveInvoiceNo =
+          updateData.supplierInvoiceNo !== undefined
+            ? updateData.supplierInvoiceNo
+            : existing.supplierInvoiceNo;
+        const effectiveNotes =
+          updateData.notes !== undefined
+            ? updateData.notes
+            : existing.notes;
+        const cleanInv = effectiveInvoiceNo?.trim();
+        const cleanNotes = effectiveNotes?.trim();
+        const txnNotes = cleanInv && cleanNotes
+          ? `${cleanInv} - ${cleanNotes}`
+          : (cleanInv || cleanNotes || `PO ${existing.purchaseNumber}`);
+
+        await tx.transaction.updateMany({
+          where: { reference: existing.purchaseNumber, type: 'Purchase' },
+          data: {
+            ...(updateData.status && { status: updateData.status === 'Cancelled' ? 'Cancelled' : 'Completed' }),
+            ...(updateData.subtotal !== undefined && { netAmount: updateData.subtotal }),
+            ...(updateData.vatAmount !== undefined && { vatAmount: updateData.vatAmount }),
+            ...(updateData.total !== undefined && { grossAmount: updateData.total }),
+            ...(updateData.supplierName && {
+              customerOrSupplier: updateData.supplierName,
+              description: `Purchase from ${updateData.supplierName}`,
+            }),
+            ...(updateData.date && { date: updateData.date }),
+            ...((updateData.supplierInvoiceNo !== undefined || updateData.notes !== undefined) && {
+              notes: txnNotes,
+            }),
+          },
+        });
+      }
+
+      return updatedPurchase;
     });
 
     return res.status(200).json({
@@ -564,6 +630,19 @@ export async function deletePurchase(req, res) {
     }
 
     if (hard === 'true' || hard === true) {
+      // Check if this purchase has a linked posted ledger transaction
+      const linkedTxn = await prisma.transaction.findFirst({
+        where: { reference: existing.purchaseNumber, type: 'Purchase' },
+      });
+
+      if (linkedTxn) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'CANNOT_HARD_DELETE_POSTED_PURCHASE',
+          message: `Purchase bill ${existing.purchaseNumber} has posted ledger entries (Transaction ${linkedTxn.transactionNumber}) and cannot be physically deleted. Use cancellation instead to preserve audit compliance.`,
+        });
+      }
+
       await prisma.purchase.delete({ where: { id: existing.id } });
       return res.status(200).json({
         status: 'success',
@@ -572,10 +651,16 @@ export async function deletePurchase(req, res) {
     }
 
     // Default safe action: soft-cancel preserving accounting audit record
-    const cancelled = await prisma.purchase.update({
-      where: { id: existing.id },
-      data: { status: 'Cancelled' },
-    });
+    const [cancelled] = await prisma.$transaction([
+      prisma.purchase.update({
+        where: { id: existing.id },
+        data: { status: 'Cancelled' },
+      }),
+      prisma.transaction.updateMany({
+        where: { reference: existing.purchaseNumber, type: 'Purchase' },
+        data: { status: 'Cancelled' },
+      }),
+    ]);
 
     return res.status(200).json({
       status: 'success',
@@ -758,7 +843,7 @@ export async function executeBatchImport(req, res) {
 
         const dateStr = item.date || new Date().toISOString().split('T')[0];
         const targetDate = new Date(dateStr);
-        const year = targetDate.getFullYear();
+        const year = !isNaN(targetDate.getTime()) ? targetDate.getFullYear() : new Date().getFullYear();
 
         const { processedItems, subtotal, vatAmount, total } = computePurchaseTotals(item.items || []);
 
@@ -806,6 +891,27 @@ export async function executeBatchImport(req, res) {
                 total: pi.total,
               })),
             },
+          },
+        });
+
+        // Synchronize to general accounting transactions table in MySQL
+        const txnNumber = await getNextTransactionNumber(tx, year);
+        await tx.transaction.create({
+          data: {
+            transactionNumber: txnNumber,
+            date: targetDate,
+            type: 'Purchase',
+            category: 'Wholesale Produce',
+            description: `Purchase from ${item.supplierName.trim()}`,
+            reference: purchaseNumber,
+            customerOrSupplier: item.supplierName.trim(),
+            netAmount: subtotal,
+            vatAmount: vatAmount,
+            grossAmount: total,
+            status: item.status === 'Cancelled' ? 'Cancelled' : 'Completed',
+            notes: item.supplierInvoiceNo?.trim() && item.notes?.trim()
+              ? `${item.supplierInvoiceNo.trim()} - ${item.notes.trim()}`
+              : (item.supplierInvoiceNo?.trim() || item.notes?.trim() || `Imported PO ${purchaseNumber}`),
           },
         });
 

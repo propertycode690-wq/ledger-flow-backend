@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import prisma from '../config/db.js';
+import { getNextTransactionNumber } from '../utils/sequence.js';
 
 export const createTransactionSchema = z.object({
   date: z.string().trim().min(1, 'Date is required.'),
-  type: z.enum(['Income', 'Expense', 'Purchase'], {
-    errorMap: () => ({ message: 'Type must be Income, Expense, or Purchase.' }),
+  type: z.enum(['Income', 'Expense'], {
+    errorMap: () => ({ message: 'Direct transactions must be Income or Expense. Purchase transactions must be created via the Purchases module.' }),
   }),
   category: z.string().trim().min(1, 'Category is required.').max(100),
   description: z.string().trim().min(1, 'Description is required.').max(255),
@@ -50,23 +51,10 @@ export const batchImportSchema = z.object({
 });
 
 /**
- * Helper to generate unique transaction number
+ * Helper to generate unique transaction number (delegates to atomic sequence counter)
  */
-async function generateNextTransactionNumber(tx) {
-  const currentYear = new Date().getFullYear();
-  const prefix = `TXN-${currentYear}-`;
-  const lastTxn = await tx.transaction.findFirst({
-    where: { transactionNumber: { startsWith: prefix } },
-    orderBy: { transactionNumber: 'desc' },
-  });
-
-  let nextSeq = 101;
-  if (lastTxn?.transactionNumber) {
-    const parts = lastTxn.transactionNumber.split('-');
-    const num = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(num)) nextSeq = num + 1;
-  }
-  return `${prefix}${String(nextSeq).padStart(3, '0')}`;
+export async function generateNextTransactionNumber(tx, year = new Date().getFullYear()) {
+  return getNextTransactionNumber(tx, year);
 }
 
 /**
@@ -154,12 +142,22 @@ export async function listTransactions(req, res) {
 export async function createTransaction(req, res) {
   try {
     const data = req.validatedBody;
+    if (data.type === 'Purchase') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'CANNOT_CREATE_PURCHASE_TRANSACTION_DIRECTLY',
+        message: 'Purchase ledger transactions cannot be created directly. Please create a purchase order from the Purchases module.',
+      });
+    }
+
     const net = parseFloat(data.netAmount) || 0;
     const vat = parseFloat(data.vatAmount) || 0;
     const gross = data.grossAmount !== undefined ? parseFloat(data.grossAmount) : net + vat;
 
     const created = await prisma.$transaction(async (tx) => {
-      const transactionNumber = await generateNextTransactionNumber(tx);
+      const txnDate = data.date ? new Date(data.date) : new Date();
+      const year = !isNaN(txnDate.getTime()) ? txnDate.getFullYear() : new Date().getFullYear();
+      const transactionNumber = await getNextTransactionNumber(tx, year);
       return tx.transaction.create({
         data: {
           transactionNumber,
@@ -225,6 +223,14 @@ export async function updateTransaction(req, res) {
         status: 'error',
         code: 'NOT_FOUND',
         message: 'Transaction not found.',
+      });
+    }
+
+    if (existing.type === 'Purchase') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'CANNOT_EDIT_PURCHASE_TRANSACTION',
+        message: 'Purchase ledger transactions cannot be edited directly. Please modify the originating purchase order from the Purchases module.',
       });
     }
 
@@ -301,6 +307,14 @@ export async function deleteTransaction(req, res) {
       });
     }
 
+    if (existing.type === 'Purchase') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'CANNOT_DELETE_PURCHASE_TRANSACTION',
+        message: 'Purchase ledger transactions cannot be deleted directly. Please void or cancel the originating purchase order from the Purchases module.',
+      });
+    }
+
     await prisma.transaction.delete({
       where: { id: existing.id },
     });
@@ -364,9 +378,10 @@ export async function importTransactionsBatch(req, res) {
           continue;
         }
 
+        const year = !isNaN(dateVal.getTime()) ? dateVal.getFullYear() : new Date().getFullYear();
         const txnNum =
           item.transactionNumber ||
-          (item.id && item.id.startsWith('TXN-') ? item.id : await generateNextTransactionNumber(tx));
+          (item.id && item.id.startsWith('TXN-') ? item.id : await getNextTransactionNumber(tx, year));
 
         await tx.transaction.create({
           data: {

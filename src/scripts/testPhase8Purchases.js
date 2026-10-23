@@ -98,19 +98,19 @@ async function runPurchasesSuite() {
     // -----------------------------------------------------------------
     console.log('📋 Test Group 1: Authentication & Role Permissions');
     const adminLogin = await request('POST', '/api/v1/auth/login', {
-      body: { email: 'admin@freshharvest.co.uk', password: 'Password123!' },
+      body: { email: 'admin@freshharvest.co.uk', password: '123456' },
     });
     expect(adminLogin.status === 200, 'Admin login succeeds (200 OK)', `Status: ${adminLogin.status}`);
     adminCookie = adminLogin.setCookie;
 
     const accountantLogin = await request('POST', '/api/v1/auth/login', {
-      body: { email: 'accounts@freshharvest.co.uk', password: 'Password123!' },
+      body: { email: 'accounts@freshharvest.co.uk', password: '123456' },
     });
     expect(accountantLogin.status === 200, 'Accountant login succeeds (200 OK)');
     accountantCookie = accountantLogin.setCookie;
 
     const customerLogin = await request('POST', '/api/v1/auth/login', {
-      body: { email: 'accounts@greenvalley.co.uk', password: 'Password123!' },
+      body: { email: 'accounts@greenvalley.co.uk', password: '123456' },
     });
     expect(customerLogin.status === 200, 'Customer login succeeds (200 OK)');
     customerCookie = customerLogin.setCookie;

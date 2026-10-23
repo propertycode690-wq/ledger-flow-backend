@@ -1,5 +1,10 @@
     import app from './app.js';
     import prisma, { testDatabaseConnection } from './config/db.js';
+    import { initBackgroundWorkers } from './services/cronService.js';
+    import { getJwtSecret } from './utils/token.js';
+
+    // Validate environment and security constraints before binding listener
+    getJwtSecret();
 
     const PORT = process.env.PORT || 5000;
 
@@ -16,6 +21,8 @@
       const dbStatus = await testDatabaseConnection();
       if (dbStatus.connected) {
         console.log(`✅ MySQL connected successfully (${dbStatus.latencyMs}ms)`);
+        // Start background workers
+        initBackgroundWorkers();
       } else {
         console.warn(`⚠️ MySQL connection check failed: ${dbStatus.error}`);
         console.warn('Please ensure Apache & MySQL are running in your XAMPP Control Panel.');

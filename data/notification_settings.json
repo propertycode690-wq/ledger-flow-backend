@@ -1,0 +1,6 @@
+{
+  "emailOnInvoiceDue": true,
+  "emailOnPayment": true,
+  "dailySummary": true,
+  "lowStockAlerts": false
+}

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import prisma from '../config/db.js';
 import { calculateInvoiceTotals, calculateLineItemTotals, round2 } from '../utils/money.js';
 import { getNextInvoiceNumber } from '../utils/sequence.js';
+import { logAuditEvent } from '../utils/auditLogger.js';
 
 const invoiceItemSchema = z.object({
   productId: z.string().trim().max(50).optional().nullable(),
@@ -20,6 +21,7 @@ export const createInvoiceSchema = z.object({
   status: z.enum(['Draft', 'Sent', 'Issued']).default('Sent'),
   discountAmount: z.coerce.number().min(0, 'Discount amount cannot be negative.').default(0),
   notes: z.string().trim().optional().nullable(),
+  orderId: z.string().trim().max(50).optional().nullable(),
   items: z.array(invoiceItemSchema).min(1, 'Invoice must have at least one line item.'),
 });
 
@@ -247,6 +249,45 @@ export async function createInvoice(req, res) {
       }
     }
 
+    // Validate order status and prevent duplicate invoice creation if linked to a daily order
+    if (data.orderId) {
+      const orderCheck = await prisma.order.findFirst({
+        where: { OR: [{ id: data.orderId }, { orderNumber: data.orderId }] },
+      });
+
+      if (!orderCheck) {
+        return res.status(404).json({
+          status: 'error',
+          code: 'ORDER_NOT_FOUND',
+          message: `Order '${data.orderId}' does not exist.`,
+        });
+      }
+
+      if (orderCheck.customerId !== data.customerId) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'ORDER_CUSTOMER_MISMATCH',
+          message: `Order '${orderCheck.orderNumber}' does not belong to customer '${data.customerId}'.`,
+        });
+      }
+
+      if (orderCheck.status === 'Invoiced') {
+        return res.status(400).json({
+          status: 'error',
+          code: 'ORDER_ALREADY_INVOICED',
+          message: `Order '${orderCheck.orderNumber}' has already been invoiced. Duplicate invoices are not permitted.`,
+        });
+      }
+
+      if (orderCheck.status === 'Cancelled') {
+        return res.status(400).json({
+          status: 'error',
+          code: 'ORDER_CANCELLED',
+          message: `Cannot generate an invoice for cancelled order '${orderCheck.orderNumber}'.`,
+        });
+      }
+    }
+
     // Calculate invoice totals server-side
     const calculatedTotals = calculateInvoiceTotals(data.items, data.discountAmount, 0);
 
@@ -259,8 +300,35 @@ export async function createInvoice(req, res) {
       dueDate = new Date(issueDate.getTime() + terms * 24 * 60 * 60 * 1000);
     }
 
-    // Create inside transaction to guarantee atomic sequential numbering
+    // Create inside transaction to guarantee atomic sequential numbering and linked order transition
     const newInvoice = await prisma.$transaction(async (tx) => {
+      // If invoice was generated from a daily order, atomically transition order to Invoiced
+      if (data.orderId) {
+        const orderToUpdate = await tx.order.findFirst({
+          where: { OR: [{ id: data.orderId }, { orderNumber: data.orderId }] },
+        });
+        if (orderToUpdate) {
+          if (orderToUpdate.status === 'Invoiced') {
+            throw {
+              statusCode: 400,
+              code: 'ORDER_ALREADY_INVOICED',
+              message: `Order '${orderToUpdate.orderNumber}' has already been invoiced. Duplicate invoices are not permitted.`,
+            };
+          }
+          if (orderToUpdate.status === 'Cancelled') {
+            throw {
+              statusCode: 400,
+              code: 'ORDER_CANCELLED',
+              message: `Cannot generate an invoice for cancelled order '${orderToUpdate.orderNumber}'.`,
+            };
+          }
+          await tx.order.update({
+            where: { id: orderToUpdate.id },
+            data: { status: 'Invoiced' },
+          });
+        }
+      }
+
       const invoiceNumber = await getNextInvoiceNumber(tx, issueDate.getFullYear());
 
       const created = await tx.invoice.create({
@@ -312,6 +380,13 @@ export async function createInvoice(req, res) {
       data: newInvoice,
     });
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        status: 'error',
+        code: error.code,
+        message: error.message,
+      });
+    }
     console.error('Create invoice error:', error);
     return res.status(500).json({
       status: 'error',
@@ -464,6 +539,31 @@ export async function finalizeInvoice(req, res) {
         items: true,
       },
     });
+
+    // Record audit log
+    await logAuditEvent({
+      action: 'INVOICE_FINALIZED',
+      entityType: 'Invoice',
+      entityId: finalized.id,
+      details: {
+        invoiceNumber: finalized.invoiceNumber,
+        total: Number(finalized.total),
+        customerId: finalized.customerId,
+      },
+      req,
+    });
+
+    // Persist notification for the customer
+    await prisma.notification.create({
+      data: {
+        role: 'customer',
+        customerId: finalized.customerId,
+        title: `New Invoice: ${finalized.invoiceNumber}`,
+        description: `Invoice for £${Number(finalized.total).toFixed(2)} has been issued and is available in your portal.`,
+        type: 'info',
+        link: '/portal?tab=invoices',
+      },
+    }).catch(() => {});
 
     return res.status(200).json({
       status: 'ok',

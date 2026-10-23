@@ -1,5 +1,46 @@
 import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import prisma from '../config/db.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const NOTIF_SETTINGS_FILE = path.resolve(__dirname, '../../data/notification_settings.json');
+
+const defaultNotifications = {
+  emailOnInvoiceDue: true,
+  emailOnPayment: true,
+  dailySummary: true,
+  lowStockAlerts: false,
+};
+
+function readNotificationSettings() {
+  try {
+    if (fs.existsSync(NOTIF_SETTINGS_FILE)) {
+      const raw = fs.readFileSync(NOTIF_SETTINGS_FILE, 'utf8');
+      return { ...defaultNotifications, ...JSON.parse(raw) };
+    }
+  } catch (err) {
+    console.warn('Could not read notification settings file:', err.message);
+  }
+  return defaultNotifications;
+}
+
+function writeNotificationSettings(notifs) {
+  try {
+    const dir = path.dirname(NOTIF_SETTINGS_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const merged = { ...readNotificationSettings(), ...notifs };
+    fs.writeFileSync(NOTIF_SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf8');
+    return merged;
+  } catch (err) {
+    console.warn('Could not write notification settings file:', err.message);
+    return notifs;
+  }
+}
 
 export const updateSettingsSchema = z.object({
   businessName: z.string().trim().min(1, 'Business name is required.').max(255).optional(),
@@ -71,11 +112,14 @@ export async function getSettings(req, res) {
       });
     }
 
+    const notifications = readNotificationSettings();
+
     return res.status(200).json({
       status: 'ok',
       data: {
         ...settings,
         defaultVatRate: parseFloat(settings.defaultVatRate) || 20,
+        notifications,
       },
     });
   } catch (error) {
@@ -96,6 +140,10 @@ export async function getSettings(req, res) {
 export async function updateSettings(req, res) {
   try {
     const data = req.validatedBody;
+
+    if (data.notifications !== undefined && data.notifications !== null) {
+      writeNotificationSettings(data.notifications);
+    }
 
     const payload = {};
     const allowedFields = [
@@ -141,12 +189,15 @@ export async function updateSettings(req, res) {
       update: payload,
     });
 
+    const notifications = readNotificationSettings();
+
     return res.status(200).json({
       status: 'ok',
       message: 'Business settings updated successfully.',
       data: {
         ...updated,
         defaultVatRate: parseFloat(updated.defaultVatRate) || 20,
+        notifications,
       },
     });
   } catch (error) {
