@@ -86,6 +86,7 @@ model User {
   role         String    @db.VarChar(50)
   name         String    @db.VarChar(255)
   title        String?   @db.VarChar(100)
+  permissions  Json?     @map("permissions")
   customerId   String?   @map("customer_id") @db.VarChar(50)
   isActive     Boolean   @default(true) @map("is_active")
   lastLoginAt  DateTime? @map("last_login_at")

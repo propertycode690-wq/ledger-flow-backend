@@ -1,5 +1,6 @@
 import { verifyToken } from '../utils/token.js';
 import prisma from '../config/db.js';
+import { getEffectivePermissions, hasPermission } from '../utils/permissions.js';
 
 /**
  * Require authentication middleware.
@@ -67,6 +68,8 @@ export async function requireAuth(req, res, next) {
       });
     }
 
+    const effectivePermissions = getEffectivePermissions(user);
+
     // Attach sanitized user to request (omit passwordHash)
     req.user = {
       id: user.id,
@@ -74,6 +77,8 @@ export async function requireAuth(req, res, next) {
       name: user.name,
       role: user.role,
       title: user.title,
+      permissions: user.permissions || null,
+      effectivePermissions,
       customerId: user.customerId,
       customer: user.customer,
       lastLoginAt: user.lastLoginAt,
@@ -109,6 +114,59 @@ export function requireRole(allowedRoles = []) {
         status: 'error',
         code: 'FORBIDDEN',
         message: `Forbidden: Access restricted to roles [${allowedRoles.join(', ')}]. Your active role is '${req.user.role}'.`,
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Enforce server-side Granular Permission verification.
+ * @param {string} permission Required permission string (e.g. 'invoices:create')
+ */
+export function requirePermission(permission) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        status: 'error',
+        code: 'UNAUTHORIZED',
+        message: 'Authentication required.',
+      });
+    }
+
+    if (!hasPermission(req.user, permission)) {
+      return res.status(403).json({
+        status: 'error',
+        code: 'FORBIDDEN',
+        message: `Forbidden: Missing required permission '${permission}'.`,
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Enforce that the user has at least one of the specified permissions.
+ * @param {string[]} permissions Array of acceptable permissions
+ */
+export function requireAnyPermission(permissions = []) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        status: 'error',
+        code: 'UNAUTHORIZED',
+        message: 'Authentication required.',
+      });
+    }
+
+    const hasAny = permissions.some((perm) => hasPermission(req.user, perm));
+    if (!hasAny) {
+      return res.status(403).json({
+        status: 'error',
+        code: 'FORBIDDEN',
+        message: `Forbidden: Requires at least one of [${permissions.join(', ')}].`,
       });
     }
 

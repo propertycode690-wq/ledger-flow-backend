@@ -7,17 +7,18 @@ import {
   getAgedDebtors,
   saveVatReturnSchema,
 } from '../controllers/report.controller.js';
-import { requireAuth, requireRole } from '../middlewares/auth.middleware.js';
+import { requireAuth, requirePermission } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
+import { PERMISSIONS } from '../utils/permissions.js';
 
 const router = Router();
 
 router.use(requireAuth);
 
-router.get('/vat-return', requireRole(['admin', 'accountant']), getVatReturn);
-router.get('/vat-returns', requireRole(['admin', 'accountant']), listVatReturns);
-router.post('/vat-returns', requireRole(['admin', 'accountant']), validateBody(saveVatReturnSchema), saveVatReturn);
-router.get('/pnl', requireRole(['admin', 'accountant']), getProfitAndLoss);
-router.get('/aged-debtors', requireRole(['admin', 'accountant']), getAgedDebtors);
+router.get('/vat-return', requirePermission(PERMISSIONS.REPORTS_VAT), getVatReturn);
+router.get('/vat-returns', requirePermission(PERMISSIONS.REPORTS_VAT), listVatReturns);
+router.post('/vat-returns', requirePermission(PERMISSIONS.REPORTS_VAT), validateBody(saveVatReturnSchema), saveVatReturn);
+router.get('/pnl', requirePermission(PERMISSIONS.REPORTS_PNL), getProfitAndLoss);
+router.get('/aged-debtors', requirePermission(PERMISSIONS.REPORTS_VIEW), getAgedDebtors);
 
 export default router;

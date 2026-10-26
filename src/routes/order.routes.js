@@ -14,33 +14,45 @@ import {
   cancelOrderSchema,
   updateFulfillmentSchema,
 } from '../controllers/order.controller.js';
-import { requireAuth, requireRole } from '../middlewares/auth.middleware.js';
+import { requireAuth, requirePermission } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
+import { PERMISSIONS, hasPermission } from '../utils/permissions.js';
 
 const router = Router();
 
 // All order endpoints require authentication
 router.use(requireAuth);
 
-// Read endpoints: Admin, Accountant, and Customer (Customer isolated to own orders)
-router.get('/', listOrders);
+function requireOrderRead(req, res, next) {
+  if (req.user.role === 'customer' || hasPermission(req.user, PERMISSIONS.ORDERS_VIEW)) {
+    return next();
+  }
+  return res.status(403).json({
+    status: 'error',
+    code: 'FORBIDDEN',
+    message: "Forbidden: Missing required permission 'orders:view'.",
+  });
+}
 
-// Wholesale procurement aggregation endpoint: Admin and Accountant only
-router.get('/procurement/aggregation', requireRole(['admin', 'accountant']), getProcurementAggregation);
+// Read endpoints: Admin, permitted staff, and Customer (Customer isolated to own orders)
+router.get('/', requireOrderRead, listOrders);
 
-// Wholesale procurement fulfillment persistence: Admin and Accountant
-router.get('/procurement/fulfillment', requireRole(['admin', 'accountant']), getProcurementFulfillment);
-router.put('/procurement/fulfillment', requireRole(['admin']), validateBody(updateFulfillmentSchema), updateProcurementFulfillment);
+// Wholesale procurement aggregation endpoint: permitted staff only
+router.get('/procurement/aggregation', requirePermission(PERMISSIONS.ORDERS_VIEW), getProcurementAggregation);
 
-// Order details: Admin, Accountant, and Customer
-router.get('/:id', getOrderById);
+// Wholesale procurement fulfillment persistence: permitted staff
+router.get('/procurement/fulfillment', requirePermission(PERMISSIONS.ORDERS_VIEW), getProcurementFulfillment);
+router.put('/procurement/fulfillment', requirePermission(PERMISSIONS.ORDERS_EDIT), validateBody(updateFulfillmentSchema), updateProcurementFulfillment);
 
-// Order creation & lifecycle modifications: Admin and Accountant only
-router.post('/', requireRole(['admin', 'accountant']), validateBody(createOrderSchema), createOrder);
-router.put('/:id', requireRole(['admin', 'accountant']), validateBody(updateOrderSchema), updateOrder);
-router.post('/:id/cancel', requireRole(['admin', 'accountant']), validateBody(cancelOrderSchema), cancelOrder);
+// Order details: Admin, permitted staff, and Customer
+router.get('/:id', requireOrderRead, getOrderById);
 
-// Safe deletion: Admin only (for Draft/Cancelled records)
-router.delete('/:id', requireRole(['admin']), deleteOrder);
+// Order creation & lifecycle modifications: strictly authorized
+router.post('/', requirePermission(PERMISSIONS.ORDERS_CREATE), validateBody(createOrderSchema), createOrder);
+router.put('/:id', requirePermission(PERMISSIONS.ORDERS_EDIT), validateBody(updateOrderSchema), updateOrder);
+router.post('/:id/cancel', requirePermission(PERMISSIONS.ORDERS_EDIT), validateBody(cancelOrderSchema), cancelOrder);
+
+// Safe deletion: requires orders:delete
+router.delete('/:id', requirePermission(PERMISSIONS.ORDERS_DELETE), deleteOrder);
 
 export default router;

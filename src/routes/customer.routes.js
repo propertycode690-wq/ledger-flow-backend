@@ -9,26 +9,36 @@ import {
   createCustomerSchema,
   updateCustomerSchema,
 } from '../controllers/customer.controller.js';
-import { requireAuth, requireRole } from '../middlewares/auth.middleware.js';
+import { requireAuth, requirePermission } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
+import { PERMISSIONS, hasPermission } from '../utils/permissions.js';
 
 const router = Router();
 
 // All customer routes require authentication
 router.use(requireAuth);
 
-// List customers: Admin and Accountant only (Customers cannot browse other customers)
-router.get('/', requireRole(['admin', 'accountant']), listCustomers);
+function requireCustomerRead(req, res, next) {
+  if (req.user.role === 'customer' || hasPermission(req.user, PERMISSIONS.CUSTOMERS_VIEW)) {
+    return next();
+  }
+  return res.status(403).json({
+    status: 'error',
+    code: 'FORBIDDEN',
+    message: "Forbidden: Missing required permission 'customers:view'.",
+  });
+}
 
-// Financial statement: Admin and Accountant can view any; Customer role is isolated to own ID
-router.get('/:id/statement', getCustomerStatement);
+// List customers: Staff with customers:view permission
+router.get('/', requirePermission(PERMISSIONS.CUSTOMERS_VIEW), listCustomers);
 
-// Single customer: Admin and Accountant can view any; Customer role is isolated to own ID
-router.get('/:id', getCustomerById);
+// Financial statement & profile: staff with customers:view or customer reading own account
+router.get('/:id/statement', requireCustomerRead, getCustomerStatement);
+router.get('/:id', requireCustomerRead, getCustomerById);
 
-// Write routes: Admin only
-router.post('/', requireRole(['admin']), validateBody(createCustomerSchema), createCustomer);
-router.put('/:id', requireRole(['admin']), validateBody(updateCustomerSchema), updateCustomer);
-router.delete('/:id', requireRole(['admin']), deleteCustomer);
+// Write routes: Granularly authorized
+router.post('/', requirePermission(PERMISSIONS.CUSTOMERS_CREATE), validateBody(createCustomerSchema), createCustomer);
+router.put('/:id', requirePermission(PERMISSIONS.CUSTOMERS_EDIT), validateBody(updateCustomerSchema), updateCustomer);
+router.delete('/:id', requirePermission(PERMISSIONS.CUSTOMERS_DELETE), deleteCustomer);
 
 export default router;

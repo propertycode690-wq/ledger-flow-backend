@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import prisma from '../config/db.js';
 import { generateToken, authCookieOptions } from '../utils/token.js';
+import { getEffectivePermissions } from '../utils/permissions.js';
 
 export const loginSchema = z.object({
   email: z.string().trim().email('A valid email address is required.'),
@@ -76,6 +77,8 @@ export async function login(req, res) {
     // Set secure HTTP-only cookie
     res.cookie('token', token, authCookieOptions);
 
+    const effectivePermissions = getEffectivePermissions(user);
+
     // Sanitized user profile (never expose passwordHash)
     const sanitizedUser = {
       id: user.id,
@@ -83,6 +86,8 @@ export async function login(req, res) {
       name: user.name,
       role: user.role,
       title: user.title,
+      permissions: user.permissions || null,
+      effectivePermissions,
       customerId: user.customerId,
       customer: user.customer,
       lastLoginAt: new Date(),
