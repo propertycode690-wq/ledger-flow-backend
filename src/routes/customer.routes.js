@@ -6,8 +6,13 @@ import {
   createCustomer,
   updateCustomer,
   deleteCustomer,
+  createPortalUser,
+  generateInvitationToken,
+  listCustomerInvitations,
+  revokeCustomerInvitation,
   createCustomerSchema,
   updateCustomerSchema,
+  createPortalUserSchema,
 } from '../controllers/customer.controller.js';
 import { requireAuth, requirePermission } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
@@ -40,5 +45,11 @@ router.get('/:id', requireCustomerRead, getCustomerById);
 router.post('/', requirePermission(PERMISSIONS.CUSTOMERS_CREATE), validateBody(createCustomerSchema), createCustomer);
 router.put('/:id', requirePermission(PERMISSIONS.CUSTOMERS_EDIT), validateBody(updateCustomerSchema), updateCustomer);
 router.delete('/:id', requirePermission(PERMISSIONS.CUSTOMERS_DELETE), deleteCustomer);
+
+// Portal user creation & invitation tokens (Admin with users:manage permission)
+router.post('/:id/portal-user', requirePermission(PERMISSIONS.USERS_MANAGE), validateBody(createPortalUserSchema), createPortalUser);
+router.post('/:id/invitation-token', requirePermission(PERMISSIONS.USERS_MANAGE), generateInvitationToken);
+router.get('/:id/invitations', requirePermission(PERMISSIONS.USERS_MANAGE), listCustomerInvitations);
+router.post('/:id/invitations/:invitationId/revoke', requirePermission(PERMISSIONS.USERS_MANAGE), revokeCustomerInvitation);
 
 export default router;

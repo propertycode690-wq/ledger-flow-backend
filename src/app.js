@@ -91,7 +91,7 @@ app.use('/api/v1/users', userRoutes);
 // Root informational endpoint
 app.get('/', (req, res) => {
   res.status(200).json({
-    name: 'LedgerFlow Backend API',
+    name: 'B3 Invoices Backend API',
     version: '1.4.0',
     phase: 'Phase 5 - Daily Operations & Van Procurement APIs',
     modules: {

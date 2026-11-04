@@ -49,6 +49,7 @@ model Customer {
   invoices       Invoice[]
   payments       Payment[]
   orders         Order[]
+  invitations    CustomerInvitation[]
 
   @@index([vanId], map: "idx_customers_van_id")
   @@index([status], map: "idx_customers_status")
@@ -505,5 +506,29 @@ model VatReturn {
   @@index([startDate, endDate], map: "idx_vat_returns_dates")
   @@map("vat_returns")
 }
+
+// Single-use and revocable customer portal invitation tokens
+model CustomerInvitation {
+  id               String    @id @default(uuid()) @db.VarChar(36)
+  tokenHash        String    @unique @map("token_hash") @db.VarChar(64)
+  customerId       String    @map("customer_id") @db.VarChar(50)
+  status           String    @default("pending") @db.VarChar(20) // 'pending', 'consumed', 'revoked', 'expired'
+  expiresAt        DateTime  @map("expires_at")
+  consumedAt       DateTime? @map("consumed_at")
+  consumedByUserId String?   @map("consumed_by_user_id") @db.VarChar(36)
+  revokedAt        DateTime? @map("revoked_at")
+  revokedByUserId  String?   @map("revoked_by_user_id") @db.VarChar(36)
+  createdByUserId  String?   @map("created_by_user_id") @db.VarChar(36)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  customer         Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@index([customerId], map: "idx_invitations_customer_id")
+  @@index([status], map: "idx_invitations_status")
+  @@index([tokenHash], map: "idx_invitations_token_hash")
+  @@map("customer_invitations")
+}
+
 
 

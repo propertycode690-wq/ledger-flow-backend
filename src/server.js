@@ -10,7 +10,7 @@
 
     const server = app.listen(PORT, async () => {
       console.log('====================================================');
-      console.log(`🚀 LedgerFlow Backend running on http://localhost:${PORT}`);
+      console.log(`🚀 B3 Invoices Backend running on http://localhost:${PORT}`);
       console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🩺 Health check: http://localhost:${PORT}/api/health`);
       console.log(`🗄️  DB Health check: http://localhost:${PORT}/api/db-health`);
@@ -31,7 +31,7 @@
 
     // Graceful Shutdown
     const handleShutdown = async (signal) => {
-      console.log(`\nReceived ${signal}. Gracefully shutting down LedgerFlow backend...`);
+      console.log(`\nReceived ${signal}. Gracefully shutting down B3 Invoices backend...`);
       server.close(async () => {
         try {
           await prisma.$disconnect();

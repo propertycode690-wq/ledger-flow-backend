@@ -11,7 +11,7 @@ const router = Router();
 router.get('/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
-    service: 'ledgerflow-backend',
+    service: 'b3-invoices-backend',
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
     uptimeSeconds: Math.floor(process.uptime()),

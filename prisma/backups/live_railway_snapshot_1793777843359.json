@@ -1,0 +1,334 @@
+{
+  "timestamp": "2026-11-04T07:36:57.751Z",
+  "database": "railway",
+  "tables": {
+    "van": [
+      {
+        "id": "van1",
+        "name": "Van 1",
+        "vehicle": "Ford Transit - LN72 XRT",
+        "isActive": true,
+        "createdAt": "2026-10-19T06:34:12.413Z",
+        "updatedAt": "2026-10-19T06:34:12.413Z"
+      },
+      {
+        "id": "van2",
+        "name": "Van 2",
+        "vehicle": "Mercedes Sprinter - RO23 FHK",
+        "isActive": true,
+        "createdAt": "2026-10-19T06:34:12.423Z",
+        "updatedAt": "2026-10-19T06:34:12.423Z"
+      },
+      {
+        "id": "van3",
+        "name": "Van 3",
+        "vehicle": "Standard Van 3",
+        "isActive": true,
+        "createdAt": "2026-10-19T06:34:12.429Z",
+        "updatedAt": "2026-10-19T06:34:12.429Z"
+      }
+    ],
+    "customer": [
+      {
+        "id": "CUST-001",
+        "name": "Green Valley Restaurant",
+        "contactPerson": "David Miller",
+        "email": "accounts@greenvalley.co.uk",
+        "phone": "+44 20 7946 0912",
+        "address": "14 Highfield Avenue, London, NW11 9PX",
+        "vatNumber": "GB 923 8812 04",
+        "paymentTerms": 14,
+        "status": "Active",
+        "openingBalance": "0",
+        "notes": null,
+        "vanId": "van1",
+        "createdAt": "2026-10-19T06:34:12.442Z",
+        "updatedAt": "2026-10-28T13:30:26.608Z"
+      },
+      {
+        "id": "CUST-002",
+        "name": "The Fresh Kitchen",
+        "contactPerson": "Elena Rostova",
+        "email": "orders@freshkitchen.com",
+        "phone": "+44 20 7946 0831",
+        "address": "88 St. John Street, Clerkenwell, London, EC1M 4EH",
+        "vatNumber": "GB 842 1190 22",
+        "paymentTerms": 30,
+        "status": "Active",
+        "openingBalance": "0",
+        "notes": null,
+        "vanId": "van2",
+        "createdAt": "2026-10-19T06:34:12.450Z",
+        "updatedAt": "2026-10-28T13:30:26.608Z"
+      }
+    ],
+    "product": [
+      {
+        "id": "PROD-001",
+        "name": "Vine Tomatoes",
+        "unit": "kg",
+        "defaultRate": "3.2",
+        "defaultVat": "0",
+        "category": "Produce",
+        "stock": 120,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.640Z",
+        "updatedAt": "2026-10-19T06:47:00.640Z"
+      },
+      {
+        "id": "PROD-002",
+        "name": "King Edward Potatoes",
+        "unit": "kg",
+        "defaultRate": "1.45",
+        "defaultVat": "0",
+        "category": "Produce",
+        "stock": 350,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.649Z",
+        "updatedAt": "2026-10-19T06:47:00.649Z"
+      },
+      {
+        "id": "PROD-003",
+        "name": "Spanish Brown Onions",
+        "unit": "kg",
+        "defaultRate": "1.8",
+        "defaultVat": "0",
+        "category": "Produce",
+        "stock": 180,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.661Z",
+        "updatedAt": "2026-10-19T06:47:00.661Z"
+      },
+      {
+        "id": "PROD-004",
+        "name": "Crisp Iceberg Lettuce",
+        "unit": "units",
+        "defaultRate": "1.15",
+        "defaultVat": "0",
+        "category": "Salads",
+        "stock": 95,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.667Z",
+        "updatedAt": "2026-10-19T06:47:00.667Z"
+      },
+      {
+        "id": "PROD-005",
+        "name": "English Cucumbers",
+        "unit": "units",
+        "defaultRate": "0.95",
+        "defaultVat": "0",
+        "category": "Salads",
+        "stock": 110,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.677Z",
+        "updatedAt": "2026-10-19T06:47:00.677Z"
+      },
+      {
+        "id": "PROD-006",
+        "name": "Mixed Bell Peppers (Red/Yellow)",
+        "unit": "kg",
+        "defaultRate": "3.8",
+        "defaultVat": "0",
+        "category": "Produce",
+        "stock": 65,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.682Z",
+        "updatedAt": "2026-10-19T06:47:00.682Z"
+      },
+      {
+        "id": "PROD-007",
+        "name": "Fresh Washed Carrots",
+        "unit": "kg",
+        "defaultRate": "1.2",
+        "defaultVat": "0",
+        "category": "Root Veg",
+        "stock": 210,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.687Z",
+        "updatedAt": "2026-10-19T06:47:00.687Z"
+      },
+      {
+        "id": "PROD-008",
+        "name": "Portobello Mushrooms",
+        "unit": "kg",
+        "defaultRate": "4.5",
+        "defaultVat": "0",
+        "category": "Produce",
+        "stock": 40,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.692Z",
+        "updatedAt": "2026-10-19T06:47:00.692Z"
+      },
+      {
+        "id": "PROD-009",
+        "name": "Fresh Basil Bunches",
+        "unit": "bunches",
+        "defaultRate": "1.5",
+        "defaultVat": "0",
+        "category": "Herbs",
+        "stock": 30,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.697Z",
+        "updatedAt": "2026-10-19T06:47:00.697Z"
+      },
+      {
+        "id": "PROD-010",
+        "name": "Avocados (Ready to Eat)",
+        "unit": "boxes (18ct)",
+        "defaultRate": "14.5",
+        "defaultVat": "0",
+        "category": "Produce",
+        "stock": 22,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.703Z",
+        "updatedAt": "2026-10-19T06:47:00.703Z"
+      },
+      {
+        "id": "PROD-011",
+        "name": "Extra Virgin Olive Oil 5L",
+        "unit": "tins",
+        "defaultRate": "28",
+        "defaultVat": "20",
+        "category": "Pantry",
+        "stock": 15,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.709Z",
+        "updatedAt": "2026-10-19T06:47:00.709Z"
+      },
+      {
+        "id": "PROD-012",
+        "name": "San Marzano Canned Tomatoes (2.5kg)",
+        "unit": "cans",
+        "defaultRate": "6.5",
+        "defaultVat": "20",
+        "category": "Pantry",
+        "stock": 48,
+        "isActive": true,
+        "createdAt": "2026-10-19T06:47:00.715Z",
+        "updatedAt": "2026-10-19T06:47:00.715Z"
+      }
+    ],
+    "user": [
+      {
+        "id": "USR-ACC",
+        "email": "accounts@freshharvest.co.uk",
+        "passwordHash": "$2b$12$/pO1n4jlCOQbomil7re/ee/csNT12nQFIk0wxsDDRqsIOhXBxYXou",
+        "role": "accountant",
+        "name": "Accounts & Tax Manager",
+        "title": "Accountant / Auditor",
+        "permissions": null,
+        "customerId": null,
+        "isActive": true,
+        "lastLoginAt": "2026-10-26T10:41:09.912Z",
+        "createdAt": "2026-10-19T06:34:12.773Z",
+        "updatedAt": "2026-10-26T10:41:09.916Z"
+      },
+      {
+        "id": "USR-ADMIN",
+        "email": "admin@freshharvest.co.uk",
+        "passwordHash": "$2b$12$/pO1n4jlCOQbomil7re/ee/csNT12nQFIk0wxsDDRqsIOhXBxYXou",
+        "role": "admin",
+        "name": "Fresh Harvest Admin",
+        "title": "Business Owner / Admin",
+        "permissions": null,
+        "customerId": null,
+        "isActive": true,
+        "lastLoginAt": "2026-11-04T05:36:53.660Z",
+        "createdAt": "2026-10-19T06:34:12.764Z",
+        "updatedAt": "2026-11-04T05:36:53.661Z"
+      },
+      {
+        "id": "USR-CUST-001",
+        "email": "accounts@greenvalley.co.uk",
+        "passwordHash": "$2b$12$/pO1n4jlCOQbomil7re/ee/csNT12nQFIk0wxsDDRqsIOhXBxYXou",
+        "role": "customer",
+        "name": "David Miller",
+        "title": "Customer Client",
+        "permissions": null,
+        "customerId": "CUST-001",
+        "isActive": true,
+        "lastLoginAt": "2026-10-26T08:50:04.400Z",
+        "createdAt": "2026-10-19T06:34:12.788Z",
+        "updatedAt": "2026-10-26T08:50:04.403Z"
+      }
+    ],
+    "businessSettings": [
+      {
+        "id": 1,
+        "businessName": "eresh Harvest Wholesale & Logistics Ltd",
+        "tradingName": "Fresh Harvest Direct Ltd",
+        "email": "accounts@freshharvestdirect.co.uk",
+        "phone": "+44 20 8123 4567",
+        "address": "Unit 4, Spitalfields Wholesale Park, London, E1 6AQ",
+        "vatNumber": "GB 381 9024 11",
+        "companyNumber": "12948201",
+        "currency": "USD",
+        "currencySymbol": "$",
+        "invoicePrefix": "INV-2026-",
+        "nextInvoiceNumber": 1,
+        "defaultPaymentTerms": 14,
+        "defaultVatRate": "20",
+        "bankName": "Barclays Business UK",
+        "accountName": "Fresh Harvest Direct Ltd",
+        "sortCode": "20-44-67",
+        "accountNumber": "83920194",
+        "iban": "GB29 BARC 2044 6783 9201 94",
+        "squareConnected": true,
+        "squareMerchantId": "sq_merch_live_89124",
+        "whatsAppStatus": "disconnected",
+        "whatsAppPhone": "+44 7700 900123",
+        "notesFooter": "Payment terms: 14 days from issue date. All produce sold remains property of Fresh Harvest Direct Ltd until paid in full.",
+        "createdAt": "2026-10-19T06:34:12.460Z",
+        "updatedAt": "2026-10-28T13:30:32.485Z"
+      }
+    ],
+    "invoiceSequence": [
+      {
+        "prefix": "EXP-2026-",
+        "nextNumber": 1,
+        "updatedAt": "2026-10-28T13:30:30.325Z"
+      },
+      {
+        "prefix": "INV-2026-",
+        "nextNumber": 1,
+        "updatedAt": "2026-10-28T13:30:30.325Z"
+      },
+      {
+        "prefix": "MIL-2026-",
+        "nextNumber": 1,
+        "updatedAt": "2026-10-28T13:30:30.325Z"
+      },
+      {
+        "prefix": "PAY-2026-",
+        "nextNumber": 1,
+        "updatedAt": "2026-10-28T13:30:30.325Z"
+      },
+      {
+        "prefix": "PUR-2026-",
+        "nextNumber": 1,
+        "updatedAt": "2026-10-28T13:30:30.325Z"
+      },
+      {
+        "prefix": "SUP-",
+        "nextNumber": 1,
+        "updatedAt": "2026-10-28T13:30:30.325Z"
+      }
+    ],
+    "invoice": [],
+    "invoiceItem": [],
+    "payment": [],
+    "paymentAllocation": [],
+    "order": [],
+    "orderItem": [],
+    "mileage": [],
+    "vehicleExpense": [],
+    "vatReturn": [],
+    "purchase": [],
+    "purchaseItem": [],
+    "supplier": [],
+    "procurementFulfillment": [],
+    "transaction": [],
+    "notification": [],
+    "auditLog": []
+  }
+}

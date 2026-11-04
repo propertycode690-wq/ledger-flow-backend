@@ -1,5 +1,16 @@
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import prisma from '../config/db.js';
+import { getJwtSecret } from '../utils/token.js';
+import { logAuditEvent } from '../utils/auditLogger.js';
+
+export const createPortalUserSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required.').max(255),
+  email: z.string().trim().email('Valid email address is required.').max(255),
+  password: z.string().min(6, 'Password must be at least 6 characters.'),
+});
 
 export const createCustomerSchema = z.object({
   id: z
@@ -660,4 +671,342 @@ export async function deleteCustomer(req, res) {
     });
   }
 }
+
+/**
+ * @route   POST /api/v1/customers/:id/portal-user
+ * @desc    Admin provisions or links a customer portal user account
+ * @access  Protected (Admin only, users:manage)
+ */
+export async function createPortalUser(req, res) {
+  try {
+    const { id } = req.params;
+    const { name, email, password } = req.validatedBody;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Verify customer exists
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+    });
+    if (!customer) {
+      return res.status(404).json({
+        status: 'error',
+        code: 'CUSTOMER_NOT_FOUND',
+        message: `Customer '${id}' not found.`,
+      });
+    }
+
+    // Check duplicate email across users
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+    if (existingUser) {
+      return res.status(409).json({
+        status: 'error',
+        code: 'EMAIL_ALREADY_EXISTS',
+        message: `A user account with email '${normalizedEmail}' already exists.`,
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const user = await prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        passwordHash,
+        role: 'customer',
+        name: name.trim(),
+        title: 'Customer Client',
+        customerId: customer.id,
+        permissions: [],
+        isActive: true,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        title: true,
+        customerId: true,
+        isActive: true,
+        createdAt: true,
+      },
+    });
+
+    await logAuditEvent({
+      action: 'ADMIN_CREATED_CUSTOMER_PORTAL_USER',
+      entityType: 'User',
+      entityId: user.id,
+      userId: req.user.id,
+      userEmail: req.user.email,
+      userRole: req.user.role,
+      details: { customerId: customer.id, customerName: customer.name, email: user.email },
+      req,
+    });
+
+    return res.status(201).json({
+      status: 'ok',
+      message: `Portal login created successfully for ${customer.name}.`,
+      data: user,
+    });
+  } catch (error) {
+    console.error('Error creating portal user:', error);
+    return res.status(500).json({
+      status: 'error',
+      code: 'INTERNAL_ERROR',
+      message: 'Failed to create customer portal login.',
+    });
+  }
+}
+
+/**
+ * @route   POST /api/v1/customers/:id/invitation-token
+ * @desc    Generate a secure, single-use, 7-day registration invitation token for a customer
+ * @access  Protected (Admin only, users:manage)
+ */
+export async function generateInvitationToken(req, res) {
+  try {
+    const { id } = req.params;
+
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { id: true, name: true, email: true, status: true },
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        status: 'error',
+        code: 'CUSTOMER_NOT_FOUND',
+        message: `Customer '${id}' not found.`,
+      });
+    }
+
+    if (customer.status !== 'Active') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'CUSTOMER_INACTIVE',
+        message: `Cannot generate an invitation token for an inactive customer account.`,
+      });
+    }
+
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const secret = getJwtSecret();
+    const token = jwt.sign(
+      {
+        type: 'portal_invitation',
+        customerId: customer.id,
+        customerName: customer.name,
+        nonce,
+      },
+      secret,
+      { expiresIn: '7d' }
+    );
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Persist single-use invitation record (storing SHA-256 hash, NEVER raw token)
+    const invitation = await prisma.customerInvitation.create({
+      data: {
+        tokenHash,
+        customerId: customer.id,
+        status: 'pending',
+        expiresAt,
+        createdByUserId: req.user?.id || null,
+      },
+    });
+
+    await logAuditEvent({
+      action: 'GENERATED_PORTAL_INVITATION_TOKEN',
+      entityType: 'CustomerInvitation',
+      entityId: invitation.id,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      details: { customerId: customer.id, invitationId: invitation.id, expiresAt: expiresAt.toISOString() },
+      req,
+    });
+
+    return res.status(200).json({
+      status: 'ok',
+      message: 'Invitation token generated successfully.',
+      data: {
+        id: invitation.id,
+        token,
+        customerId: customer.id,
+        customerName: customer.name,
+        customerEmail: customer.email,
+        expiresAt: expiresAt.toISOString(),
+        status: 'pending',
+      },
+    });
+  } catch (error) {
+    console.error('Error generating invitation token:', error);
+    return res.status(500).json({
+      status: 'error',
+      code: 'INTERNAL_ERROR',
+      message: 'Failed to generate invitation token.',
+    });
+  }
+}
+
+/**
+ * @route   GET /api/v1/customers/:id/invitations
+ * @desc    List invitations for a customer (never exposes token or tokenHash)
+ * @access  Protected (Admin only, users:manage)
+ */
+export async function listCustomerInvitations(req, res) {
+  try {
+    const { id } = req.params;
+
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        status: 'error',
+        code: 'CUSTOMER_NOT_FOUND',
+        message: `Customer '${id}' not found.`,
+      });
+    }
+
+    const invitations = await prisma.customerInvitation.findMany({
+      where: { customerId: id },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        customerId: true,
+        status: true,
+        expiresAt: true,
+        consumedAt: true,
+        consumedByUserId: true,
+        revokedAt: true,
+        revokedByUserId: true,
+        createdByUserId: true,
+        createdAt: true,
+      },
+    });
+
+    // Dynamically flag expired tokens whose status is still 'pending'
+    const now = new Date();
+    const processed = invitations.map((inv) => {
+      const isExpired = inv.status === 'pending' && new Date(inv.expiresAt) < now;
+      return {
+        ...inv,
+        status: isExpired ? 'expired' : inv.status,
+      };
+    });
+
+    return res.status(200).json({
+      status: 'ok',
+      data: processed,
+    });
+  } catch (error) {
+    console.error('Error listing customer invitations:', error);
+    return res.status(500).json({
+      status: 'error',
+      code: 'INTERNAL_ERROR',
+      message: 'Failed to retrieve customer invitations.',
+    });
+  }
+}
+
+/**
+ * @route   POST /api/v1/customers/:id/invitations/:invitationId/revoke
+ * @desc    Revoke an outstanding, pending invitation token
+ * @access  Protected (Admin only, users:manage)
+ */
+export async function revokeCustomerInvitation(req, res) {
+  try {
+    const { id, invitationId } = req.params;
+
+    // Confirm customer exists
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { id: true, name: true },
+    });
+    if (!customer) {
+      return res.status(404).json({
+        status: 'error',
+        code: 'CUSTOMER_NOT_FOUND',
+        message: `Customer '${id}' not found.`,
+      });
+    }
+
+    // Confirm invitation belongs to this customer
+    const invitation = await prisma.customerInvitation.findFirst({
+      where: {
+        id: invitationId,
+        customerId: id,
+      },
+    });
+
+    if (!invitation) {
+      return res.status(404).json({
+        status: 'error',
+        code: 'INVITATION_NOT_FOUND',
+        message: `Invitation '${invitationId}' not found for customer '${id}'.`,
+      });
+    }
+
+    if (invitation.status === 'revoked') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'ALREADY_REVOKED',
+        message: 'This invitation has already been revoked.',
+      });
+    }
+
+    if (invitation.status === 'consumed') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'ALREADY_CONSUMED',
+        message: 'This invitation has already been used to register an account and cannot be revoked.',
+      });
+    }
+
+    // Atomic update to revoked status
+    const revoked = await prisma.customerInvitation.update({
+      where: { id: invitation.id },
+      data: {
+        status: 'revoked',
+        revokedAt: new Date(),
+        revokedByUserId: req.user?.id || null,
+      },
+      select: {
+        id: true,
+        customerId: true,
+        status: true,
+        revokedAt: true,
+        expiresAt: true,
+      },
+    });
+
+    await logAuditEvent({
+      action: 'REVOKED_PORTAL_INVITATION',
+      entityType: 'CustomerInvitation',
+      entityId: invitation.id,
+      userId: req.user?.id || null,
+      userEmail: req.user?.email || null,
+      userRole: req.user?.role || null,
+      details: { customerId: customer.id, invitationId: invitation.id, revokedAt: revoked.revokedAt.toISOString() },
+      req,
+    });
+
+    return res.status(200).json({
+      status: 'ok',
+      message: 'Invitation revoked successfully.',
+      data: revoked,
+    });
+  } catch (error) {
+    console.error('Error revoking customer invitation:', error);
+    return res.status(500).json({
+      status: 'error',
+      code: 'INTERNAL_ERROR',
+      message: 'Failed to revoke customer invitation.',
+    });
+  }
+}
+
 

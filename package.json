@@ -1,7 +1,7 @@
 {
   "name": "ledgerflow-backend",
   "version": "1.0.0",
-  "description": "Backend API service for LedgerFlow Invoice System",
+  "description": "Backend API service for B3 Invoices System",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
     "seed": "node prisma/seed.js",
+    "clean:data": "node src/scripts/cleanDatabase.js",
     "test:phase2": "node src/scripts/testPhase2.js",
     "test:phase3": "node src/scripts/testPhase3.js",
     "test:phase4": "node src/scripts/testPhase4.js",

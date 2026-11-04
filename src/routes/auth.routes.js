@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { login, me, logout, loginSchema } from '../controllers/auth.controller.js';
+import { login, me, logout, register, loginSchema, registerSchema } from '../controllers/auth.controller.js';
 import { requireAuth, requireRole, enforceCustomerScope } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
 
@@ -7,6 +7,7 @@ const router = Router();
 
 // Core Authentication Endpoints
 router.post('/login', validateBody(loginSchema), login);
+router.post('/register', validateBody(registerSchema), register);
 router.get('/me', requireAuth, me);
 router.post('/logout', requireAuth, logout);
 
