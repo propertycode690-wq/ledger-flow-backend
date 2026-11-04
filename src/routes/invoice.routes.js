@@ -11,7 +11,7 @@ import {
   updateInvoiceSchema,
   voidInvoiceSchema,
 } from '../controllers/invoice.controller.js';
-import { requireAuth, requirePermission } from '../middlewares/auth.middleware.js';
+import { requireAuth, requirePermission, requireTermsAcceptance } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
 import { PERMISSIONS, hasPermission } from '../utils/permissions.js';
 
@@ -33,8 +33,8 @@ function requireInvoiceRead(req, res, next) {
 }
 
 // Read routes: Accessible to Admin, authorized Accountant, and Customer (scoped to own account)
-router.get('/', requireInvoiceRead, listInvoices);
-router.get('/:id', requireInvoiceRead, getInvoiceById);
+router.get('/', requireInvoiceRead, requireTermsAcceptance, listInvoices);
+router.get('/:id', requireInvoiceRead, requireTermsAcceptance, getInvoiceById);
 
 // Financial operations: Granularly authorized
 router.post('/', requirePermission(PERMISSIONS.INVOICES_CREATE), validateBody(createInvoiceSchema), createInvoice);

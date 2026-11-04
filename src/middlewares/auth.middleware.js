@@ -211,3 +211,127 @@ export function enforceCustomerScope(req, res, next) {
 
   next();
 }
+
+/**
+ * Optional authentication middleware.
+ * If a valid token is present, populates req.user. If not, proceeds without error.
+ */
+export async function optionalAuth(req, res, next) {
+  let token = null;
+
+  if (req.cookies && req.cookies.token) {
+    token = req.cookies.token;
+  } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+
+  if (!token) {
+    return next();
+  }
+
+  const decoded = verifyToken(token);
+  if (!decoded || !decoded.userId) {
+    return next();
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            contactPerson: true,
+            email: true,
+            vanId: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (user && user.isActive) {
+      const effectivePermissions = getEffectivePermissions(user);
+      req.user = {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        title: user.title,
+        permissions: user.permissions || null,
+        effectivePermissions,
+        customerId: user.customerId,
+        customer: user.customer,
+        lastLoginAt: user.lastLoginAt,
+      };
+    }
+  } catch (err) {
+    console.debug('optionalAuth non-critical error:', err.message);
+  }
+
+  next();
+}
+
+/**
+ * Guard customer portal API endpoints to ensure active Terms & Conditions acceptance.
+ * For users with role === 'customer', checks whether they have accepted the current published terms.
+ * If not accepted, returns 403 with code 'TERMS_ACCEPTANCE_REQUIRED'.
+ */
+export async function requireTermsAcceptance(req, res, next) {
+  // If no user or user is not a customer, terms enforcement is bypassed (admins/accountants exempt)
+  if (!req.user || req.user.role !== 'customer') {
+    return next();
+  }
+
+  try {
+    // Find active published terms requiring reacceptance
+    const activeTerms = await prisma.termsVersion.findFirst({
+      where: {
+        status: 'published',
+        requiresReacceptance: true,
+      },
+      orderBy: { publishedAt: 'desc' },
+      select: {
+        id: true,
+        version: true,
+        title: true,
+        publishedAt: true,
+      },
+    });
+
+    // If no published terms require acceptance, allow access
+    if (!activeTerms) {
+      return next();
+    }
+
+    // Check if user has accepted this terms version
+    const acceptance = await prisma.customerTermsAcceptance.findUnique({
+      where: {
+        userId_termsVersionId: {
+          userId: req.user.id,
+          termsVersionId: activeTerms.id,
+        },
+      },
+    });
+
+    if (!acceptance) {
+      return res.status(403).json({
+        status: 'error',
+        code: 'TERMS_ACCEPTANCE_REQUIRED',
+        message: 'You must review and accept the latest Customer Terms & Conditions before continuing.',
+        termsVersion: activeTerms,
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('requireTermsAcceptance middleware error:', error);
+    return res.status(500).json({
+      status: 'error',
+      code: 'INTERNAL_ERROR',
+      message: 'Failed to verify Terms & Conditions acceptance status.',
+    });
+  }
+}
+

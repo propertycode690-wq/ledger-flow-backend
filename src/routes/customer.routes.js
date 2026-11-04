@@ -14,7 +14,7 @@ import {
   updateCustomerSchema,
   createPortalUserSchema,
 } from '../controllers/customer.controller.js';
-import { requireAuth, requirePermission } from '../middlewares/auth.middleware.js';
+import { requireAuth, requirePermission, requireTermsAcceptance } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
 import { PERMISSIONS, hasPermission } from '../utils/permissions.js';
 
@@ -38,8 +38,8 @@ function requireCustomerRead(req, res, next) {
 router.get('/', requirePermission(PERMISSIONS.CUSTOMERS_VIEW), listCustomers);
 
 // Financial statement & profile: staff with customers:view or customer reading own account
-router.get('/:id/statement', requireCustomerRead, getCustomerStatement);
-router.get('/:id', requireCustomerRead, getCustomerById);
+router.get('/:id/statement', requireCustomerRead, requireTermsAcceptance, getCustomerStatement);
+router.get('/:id', requireCustomerRead, requireTermsAcceptance, getCustomerById);
 
 // Write routes: Granularly authorized
 router.post('/', requirePermission(PERMISSIONS.CUSTOMERS_CREATE), validateBody(createCustomerSchema), createCustomer);

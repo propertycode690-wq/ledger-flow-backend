@@ -7,7 +7,7 @@ import {
   createPaymentSchema,
   voidPaymentSchema,
 } from '../controllers/payment.controller.js';
-import { requireAuth, requirePermission } from '../middlewares/auth.middleware.js';
+import { requireAuth, requirePermission, requireTermsAcceptance } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
 import { PERMISSIONS, hasPermission } from '../utils/permissions.js';
 
@@ -28,8 +28,8 @@ function requirePaymentRead(req, res, next) {
 }
 
 // Read routes: Accessible to Admin, permitted staff, and Customer (scoped to own account)
-router.get('/', requirePaymentRead, listPayments);
-router.get('/:id', requirePaymentRead, getPaymentById);
+router.get('/', requirePaymentRead, requireTermsAcceptance, listPayments);
+router.get('/:id', requirePaymentRead, requireTermsAcceptance, getPaymentById);
 
 // Financial operations: Restricted to users with payments:create and payments:delete permissions
 router.post('/', requirePermission(PERMISSIONS.PAYMENTS_CREATE), validateBody(createPaymentSchema), createPayment);

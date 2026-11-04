@@ -18,6 +18,7 @@ import notificationRoutes from './routes/notification.routes.js';
 import auditLogRoutes from './routes/auditLog.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import userRoutes from './routes/user.routes.js';
+import termsRoutes from './routes/terms.routes.js';
 
 dotenv.config();
 
@@ -87,6 +88,7 @@ app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/audit-logs', auditLogRoutes);
 app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/terms', termsRoutes);
 
 // Root informational endpoint
 app.get('/', (req, res) => {

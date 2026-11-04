@@ -18,6 +18,7 @@ export const registerSchema = z.object({
   invitationToken: z.string().trim().optional().nullable(),
   customerId: z.string().trim().max(50).optional().nullable(),
   verificationSecret: z.string().trim().max(100).optional().nullable(),
+  acceptTerms: z.boolean().optional().default(false),
 });
 
 /**
@@ -90,6 +91,34 @@ export async function login(req, res) {
 
     const effectivePermissions = getEffectivePermissions(user);
 
+    // Evaluate Terms & Conditions acceptance for customer portal users
+    let termsAcceptance = {
+      required: false,
+      hasAccepted: true,
+      currentVersion: null,
+    };
+
+    if (user.role === 'customer') {
+      const activeTerms = await prisma.termsVersion.findFirst({
+        where: { status: 'published', requiresReacceptance: true },
+        orderBy: { publishedAt: 'desc' },
+      });
+
+      if (activeTerms) {
+        termsAcceptance.required = true;
+        termsAcceptance.currentVersion = activeTerms.version;
+        const acceptance = await prisma.customerTermsAcceptance.findUnique({
+          where: {
+            userId_termsVersionId: {
+              userId: user.id,
+              termsVersionId: activeTerms.id,
+            },
+          },
+        });
+        termsAcceptance.hasAccepted = !!acceptance;
+      }
+    }
+
     // Sanitized user profile (never expose passwordHash)
     const sanitizedUser = {
       id: user.id,
@@ -102,6 +131,7 @@ export async function login(req, res) {
       customerId: user.customerId,
       customer: user.customer,
       lastLoginAt: new Date(),
+      termsAcceptance,
     };
 
     return res.status(200).json({
@@ -126,9 +156,39 @@ export async function login(req, res) {
  * @access  Protected
  */
 export async function me(req, res) {
+  let termsAcceptance = {
+    required: false,
+    hasAccepted: true,
+    currentVersion: null,
+  };
+
+  if (req.user?.role === 'customer') {
+    const activeTerms = await prisma.termsVersion.findFirst({
+      where: { status: 'published', requiresReacceptance: true },
+      orderBy: { publishedAt: 'desc' },
+    });
+
+    if (activeTerms) {
+      termsAcceptance.required = true;
+      termsAcceptance.currentVersion = activeTerms.version;
+      const acceptance = await prisma.customerTermsAcceptance.findUnique({
+        where: {
+          userId_termsVersionId: {
+            userId: req.user.id,
+            termsVersionId: activeTerms.id,
+          },
+        },
+      });
+      termsAcceptance.hasAccepted = !!acceptance;
+    }
+  }
+
   return res.status(200).json({
     status: 'ok',
-    user: req.user,
+    user: {
+      ...req.user,
+      termsAcceptance,
+    },
   });
 }
 
@@ -171,6 +231,12 @@ export async function register(req, res) {
       });
     }
 
+    // Find active published Terms & Conditions if configured
+    const activeTerms = await prisma.termsVersion.findFirst({
+      where: { status: 'published' },
+      orderBy: { publishedAt: 'desc' },
+    });
+
     let targetCustomer = null;
     let newUser = null;
     let consumedInvitationId = null;
@@ -198,6 +264,20 @@ export async function register(req, res) {
           status: 'error',
           code: 'CUSTOMER_INACTIVE',
           message: 'The associated customer account was not found or is currently inactive.',
+        });
+      }
+
+      // Mandatory Terms & Conditions acceptance verification
+      if (activeTerms && req.validatedBody.acceptTerms !== true) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'TERMS_ACCEPTANCE_REQUIRED',
+          message: 'You must review and accept the Customer Terms & Conditions to complete registration.',
+          termsVersion: {
+            id: activeTerms.id,
+            version: activeTerms.version,
+            title: activeTerms.title,
+          },
         });
       }
 
@@ -293,6 +373,23 @@ export async function register(req, res) {
           throw err;
         }
 
+        // Record Terms & Conditions acceptance atomically
+        if (activeTerms) {
+          const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+          const userAgent = (req.headers['user-agent'] || '').slice(0, 255) || null;
+          await tx.customerTermsAcceptance.create({
+            data: {
+              termsVersionId: activeTerms.id,
+              customerId: targetCustomer.id,
+              userId: createdUser.id,
+              versionString: activeTerms.version,
+              acceptanceMethod: 'registration',
+              ipAddress: typeof clientIp === 'string' ? clientIp.slice(0, 45) : null,
+              userAgent,
+            },
+          });
+        }
+
         return { user: createdUser, invitationId: invitation.id };
       });
 
@@ -353,36 +450,174 @@ export async function register(req, res) {
         });
       }
 
+      // Mandatory Terms & Conditions acceptance verification
+      if (activeTerms && req.validatedBody.acceptTerms !== true) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'TERMS_ACCEPTANCE_REQUIRED',
+          message: 'You must review and accept the Customer Terms & Conditions to complete registration.',
+          termsVersion: {
+            id: activeTerms.id,
+            version: activeTerms.version,
+            title: activeTerms.title,
+          },
+        });
+      }
+
       const passwordHash = await bcrypt.hash(password, 12);
 
-      newUser = await prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          role: 'customer',
-          name: name.trim(),
-          title: 'Customer Client',
-          customerId: targetCustomer.id,
-          permissions: [],
-          isActive: true,
-        },
-        include: {
-          customer: {
-            select: {
-              id: true,
-              name: true,
-              contactPerson: true,
-              email: true,
-              status: true,
+      const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+      const userAgent = (req.headers['user-agent'] || '').slice(0, 255) || null;
+
+      newUser = await prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            email: normalizedEmail,
+            passwordHash,
+            role: 'customer',
+            name: name.trim(),
+            title: 'Customer Client',
+            customerId: targetCustomer.id,
+            permissions: [],
+            isActive: true,
+          },
+          include: {
+            customer: {
+              select: {
+                id: true,
+                name: true,
+                contactPerson: true,
+                email: true,
+                status: true,
+              },
             },
           },
-        },
+        });
+
+        if (activeTerms) {
+          await tx.customerTermsAcceptance.create({
+            data: {
+              termsVersionId: activeTerms.id,
+              customerId: targetCustomer.id,
+              userId: created.id,
+              versionString: activeTerms.version,
+              acceptanceMethod: 'registration',
+              ipAddress: typeof clientIp === 'string' ? clientIp.slice(0, 45) : null,
+              userAgent,
+            },
+          });
+        }
+
+        return created;
       });
     } else {
-      return res.status(400).json({
-        status: 'error',
-        code: 'VERIFICATION_REQUIRED',
-        message: 'Verification required: please provide an invitation token, or your Customer ID along with a recent invoice number or postal code.',
+      // 3. Verification Method C: Auto-Match by Email or Auto-Provision New Customer
+      targetCustomer = await prisma.customer.findFirst({
+        where: {
+          email: normalizedEmail,
+          status: 'Active',
+        },
+      });
+
+      let isNewCustomer = false;
+      let newCustomerData = null;
+
+      if (!targetCustomer) {
+        // Auto-provision a new customer record for this client
+        const lastCustomer = await prisma.customer.findFirst({
+          where: { id: { startsWith: 'CUST-' } },
+          orderBy: { id: 'desc' },
+        });
+
+        let nextCustomerId = 'CUST-001';
+        if (lastCustomer) {
+          const match = lastCustomer.id.match(/^CUST-(\d+)$/);
+          if (match) {
+            const nextSeq = parseInt(match[1], 10) + 1;
+            nextCustomerId = `CUST-${String(nextSeq).padStart(3, '0')}`;
+          }
+        }
+
+        isNewCustomer = true;
+        newCustomerData = {
+          id: nextCustomerId,
+          name: name.trim(),
+          contactPerson: name.trim(),
+          email: normalizedEmail,
+          status: 'Active',
+          openingBalance: 0,
+          paymentTerms: 14,
+        };
+      }
+
+      // Mandatory Terms & Conditions acceptance verification
+      if (activeTerms && req.validatedBody.acceptTerms !== true) {
+        return res.status(400).json({
+          status: 'error',
+          code: 'TERMS_ACCEPTANCE_REQUIRED',
+          message: 'You must review and accept the Customer Terms & Conditions to complete registration.',
+          termsVersion: {
+            id: activeTerms.id,
+            version: activeTerms.version,
+            title: activeTerms.title,
+          },
+        });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 12);
+      const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+      const userAgent = (req.headers['user-agent'] || '').slice(0, 255) || null;
+
+      newUser = await prisma.$transaction(async (tx) => {
+        let customerIdToLink = targetCustomer ? targetCustomer.id : null;
+
+        if (isNewCustomer && newCustomerData) {
+          const createdCustomer = await tx.customer.create({
+            data: newCustomerData,
+          });
+          targetCustomer = createdCustomer;
+          customerIdToLink = createdCustomer.id;
+        }
+
+        const created = await tx.user.create({
+          data: {
+            email: normalizedEmail,
+            passwordHash,
+            role: 'customer',
+            name: name.trim(),
+            title: 'Customer Client',
+            customerId: customerIdToLink,
+            permissions: [],
+            isActive: true,
+          },
+          include: {
+            customer: {
+              select: {
+                id: true,
+                name: true,
+                contactPerson: true,
+                email: true,
+                status: true,
+              },
+            },
+          },
+        });
+
+        if (activeTerms) {
+          await tx.customerTermsAcceptance.create({
+            data: {
+              termsVersionId: activeTerms.id,
+              customerId: customerIdToLink,
+              userId: created.id,
+              versionString: activeTerms.version,
+              acceptanceMethod: 'registration',
+              ipAddress: typeof clientIp === 'string' ? clientIp.slice(0, 45) : null,
+              userAgent,
+            },
+          });
+        }
+
+        return created;
       });
     }
 
@@ -397,8 +632,15 @@ export async function register(req, res) {
       details: {
         customerId: targetCustomer.id,
         customerName: targetCustomer.name,
-        verificationMethod: invitationToken ? 'invitation_token' : 'account_challenge',
+        verificationMethod: invitationToken
+          ? 'invitation_token'
+          : customerId
+          ? 'account_challenge'
+          : targetCustomer
+          ? 'email_match_or_auto_provision'
+          : 'self_registration',
         invitationId: consumedInvitationId || null,
+        termsVersion: activeTerms ? activeTerms.version : null,
       },
       req,
     });
@@ -423,6 +665,11 @@ export async function register(req, res) {
       customerId: newUser.customerId,
       customer: newUser.customer,
       lastLoginAt: newUser.createdAt,
+      termsAcceptance: {
+        required: !!activeTerms,
+        hasAccepted: !!activeTerms,
+        currentVersion: activeTerms ? activeTerms.version : null,
+      },
     };
 
     return res.status(201).json({

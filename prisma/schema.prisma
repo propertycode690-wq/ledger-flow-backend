@@ -50,6 +50,7 @@ model Customer {
   payments       Payment[]
   orders         Order[]
   invitations    CustomerInvitation[]
+  termsAcceptances CustomerTermsAcceptance[]
 
   @@index([vanId], map: "idx_customers_van_id")
   @@index([status], map: "idx_customers_status")
@@ -95,6 +96,7 @@ model User {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   customer     Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  termsAcceptances CustomerTermsAcceptance[]
 
   @@index([role], map: "idx_users_role")
   @@index([customerId], map: "idx_users_customer_id")
@@ -529,6 +531,51 @@ model CustomerInvitation {
   @@index([tokenHash], map: "idx_invitations_token_hash")
   @@map("customer_invitations")
 }
+
+// Terms & Conditions version tracking and draft publication
+model TermsVersion {
+  id                   String                   @id @default(uuid()) @db.VarChar(36)
+  version              String                   @unique @db.VarChar(50)
+  title                String                   @db.VarChar(255)
+  content              String                   @db.LongText
+  status               String                   @default("draft") @db.VarChar(20) // 'draft', 'published', 'archived'
+  requiresReacceptance Boolean                  @default(true) @map("requires_reacceptance")
+  publishedAt          DateTime?                @map("published_at")
+  publishedByUserId    String?                  @map("published_by_user_id") @db.VarChar(36)
+  createdAt            DateTime                 @default(now()) @map("created_at")
+  updatedAt            DateTime                 @updatedAt @map("updated_at")
+
+  acceptances          CustomerTermsAcceptance[]
+
+  @@index([status], map: "idx_terms_status")
+  @@map("terms_versions")
+}
+
+// Immutable audit log of customer Terms & Conditions acceptances
+model CustomerTermsAcceptance {
+  id               String       @id @default(uuid()) @db.VarChar(36)
+  termsVersionId   String       @map("terms_version_id") @db.VarChar(36)
+  customerId       String       @map("customer_id") @db.VarChar(50)
+  userId           String       @map("user_id") @db.VarChar(36)
+  versionString    String       @map("version_string") @db.VarChar(50)
+  acceptedAt       DateTime     @default(now()) @map("accepted_at")
+  acceptanceMethod String       @default("portal_prompt") @map("acceptance_method") @db.VarChar(50) // 'registration', 'portal_prompt', 'admin_recorded'
+  ipAddress        String?      @map("ip_address") @db.VarChar(45)
+  userAgent        String?      @map("user_agent") @db.VarChar(255)
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  termsVersion     TermsVersion @relation(fields: [termsVersionId], references: [id], onDelete: Restrict)
+  customer         Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  user             User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, termsVersionId], map: "uniq_user_terms_version")
+  @@index([termsVersionId], map: "idx_terms_accept_version")
+  @@index([customerId], map: "idx_terms_accept_customer")
+  @@index([userId], map: "idx_terms_accept_user")
+  @@index([acceptedAt], map: "idx_terms_accept_date")
+  @@map("customer_terms_acceptances")
+}
+
 
 
 

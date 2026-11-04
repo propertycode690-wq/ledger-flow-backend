@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { seedTerms } from './seedTerms.js';
 
 const prisma = new PrismaClient();
 
@@ -92,8 +93,8 @@ async function main() {
     update: {},
     create: {
       id: 1,
-      businessName: 'Fresh Harvest Wholesale & Logistics',
-      tradingName: 'Fresh Harvest Direct Ltd',
+      businessName: 'B3 Fruit & Veg LTD',
+      tradingName: 'B3 Fruit & Veg LTD',
       email: 'accounts@freshharvestdirect.co.uk',
       phone: '+44 20 8123 4567',
       address: 'Unit 4, Spitalfields Wholesale Park, London, E1 6AQ',
@@ -106,7 +107,7 @@ async function main() {
       defaultPaymentTerms: 14,
       defaultVatRate: 20.00,
       bankName: 'Barclays Business UK',
-      accountName: 'Fresh Harvest Direct Ltd',
+      accountName: 'B3 Fruit & Veg LTD',
       sortCode: '20-44-67',
       accountNumber: '83920194',
       iban: 'GB29 BARC 2044 6783 9201 94',
@@ -114,7 +115,7 @@ async function main() {
       squareMerchantId: 'sq_merch_live_89124',
       whatsAppStatus: 'disconnected',
       whatsAppPhone: '+44 7700 900123',
-      notesFooter: 'Payment terms: 14 days from issue date. All produce sold remains property of Fresh Harvest Direct Ltd until paid in full.',
+      notesFooter: 'Payment terms: 14 days from issue date. All produce sold remains property of B3 Fruit & Veg LTD until paid in full.',
     },
   });
   console.log('✅ Business settings initialized');
@@ -172,6 +173,9 @@ async function main() {
   console.log('   - admin@freshharvest.co.uk (Role: admin)');
   console.log('   - accounts@freshharvest.co.uk (Role: accountant)');
   console.log('   - accounts@greenvalley.co.uk (Role: customer -> CUST-001)');
+
+  // 6. Seed Terms & Conditions
+  await seedTerms();
 }
 
 main()

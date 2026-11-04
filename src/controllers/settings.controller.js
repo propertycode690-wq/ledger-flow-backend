@@ -84,8 +84,8 @@ export async function getSettings(req, res) {
       settings = await prisma.businessSettings.create({
         data: {
           id: 1,
-          businessName: 'Fresh Harvest Wholesale & Logistics',
-          tradingName: 'Fresh Harvest Direct Ltd',
+          businessName: 'B3 Fruit & Veg LTD',
+          tradingName: 'B3 Fruit & Veg LTD',
           email: 'accounts@freshharvestdirect.co.uk',
           phone: '+44 20 8123 4567',
           address: 'Unit 4, Spitalfields Wholesale Park, London, E1 6AQ',
@@ -98,7 +98,7 @@ export async function getSettings(req, res) {
           defaultPaymentTerms: 14,
           defaultVatRate: 20.00,
           bankName: 'Barclays Business UK',
-          accountName: 'Fresh Harvest Direct Ltd',
+          accountName: 'B3 Fruit & Veg LTD',
           sortCode: '20-44-67',
           accountNumber: '83920194',
           iban: 'GB29 BARC 2044 6783 9201 94',
@@ -107,7 +107,7 @@ export async function getSettings(req, res) {
           whatsAppStatus: 'disconnected',
           whatsAppPhone: '+44 7700 900123',
           notesFooter:
-            'Payment terms: 14 days from issue date. All produce sold remains property of Fresh Harvest Direct Ltd until paid in full.',
+            'Payment terms: 14 days from issue date. All produce sold remains property of B3 Fruit & Veg LTD until paid in full.',
         },
       });
     }
@@ -182,7 +182,7 @@ export async function updateSettings(req, res) {
       where: { id: 1 },
       create: {
         id: 1,
-        businessName: payload.businessName || 'Fresh Harvest Wholesale & Logistics',
+        businessName: payload.businessName || 'B3 Fruit & Veg LTD',
         email: payload.email || 'accounts@freshharvestdirect.co.uk',
         ...payload,
       },
