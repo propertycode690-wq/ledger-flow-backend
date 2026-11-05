@@ -45,7 +45,7 @@ export const INITIAL_TERMS_DRAFT = `## [CLIENT WORKING COMMERCIAL DRAFT — AWAI
 7.2 All disputes regarding account statements or specific invoices must be raised in writing before the payment due date. Undisputed invoice portions must be paid in accordance with standard terms.
 
 ### 8. Electronic Authorisation & Audit Records
-8.1 Acceptance of these Terms is recorded electronically in the B3 Invoices audit log, capturing the accepting user's identity, timestamp (UTC), IP address, and customer entity reference.  
+8.1 Acceptance of these Terms is recorded electronically in the B3 Fruit & Veg LTD audit log, capturing the accepting user's identity, timestamp (UTC), IP address, and customer entity reference.  
 8.2 Electronic acceptance holds the equivalent evidentiary weight of a signed paper agreement under English commercial contract law.
 
 ### 9. Amendments & Variations

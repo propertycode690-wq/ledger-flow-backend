@@ -386,7 +386,7 @@ async function run() {
         },
         body: JSON.stringify({
           version: '2026-v2.0-test',
-          title: 'B3 Invoices Customer Terms — Updated Produce Quality Clauses',
+          title: 'B3 Fruit & Veg LTD Customer Terms — Updated Produce Quality Clauses',
           content: 'Test updated wholesale clauses draft content.',
           requiresReacceptance: true,
         }),
@@ -415,7 +415,7 @@ async function run() {
           Authorization: `Bearer ${adminToken}`,
         },
         body: JSON.stringify({
-          title: 'B3 Invoices Customer Terms — Revised 2026 Produce Agreements',
+          title: 'B3 Fruit & Veg LTD Customer Terms — Revised 2026 Produce Agreements',
         }),
       });
       const data = await res.json();

@@ -86,7 +86,7 @@ export async function getSettings(req, res) {
           id: 1,
           businessName: 'B3 Fruit & Veg LTD',
           tradingName: 'B3 Fruit & Veg LTD',
-          email: 'accounts@freshharvestdirect.co.uk',
+          email: 'accounts@b3fruitveg.co.uk',
           phone: '+44 20 8123 4567',
           address: 'Unit 4, Spitalfields Wholesale Park, London, E1 6AQ',
           vatNumber: 'GB 381 9024 11',
@@ -183,7 +183,7 @@ export async function updateSettings(req, res) {
       create: {
         id: 1,
         businessName: payload.businessName || 'B3 Fruit & Veg LTD',
-        email: payload.email || 'accounts@freshharvestdirect.co.uk',
+        email: payload.email || 'accounts@b3fruitveg.co.uk',
         ...payload,
       },
       update: payload,
