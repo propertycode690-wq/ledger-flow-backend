@@ -10,7 +10,7 @@ dotenv.config();
 
 import app from '../app.js';
 import { generateToken, verifyToken } from '../utils/token.js';
-import { registerSchema } from '../controllers/auth.controller.js';
+import { registerSchema, forgotPasswordSchema, resetPasswordSchema } from '../controllers/auth.controller.js';
 import { createPortalUserSchema } from '../controllers/customer.controller.js';
 import { enforceCustomerScope } from '../middlewares/auth.middleware.js';
 import { testDatabaseConnection } from '../config/db.js';
@@ -198,12 +198,21 @@ async function runPhase2SecurityVerification() {
   const expiredConsumeResult = simulateAtomicTransition(mockExpiredRecord, 'pending', 'consumed');
   assert(expiredConsumeResult === 0, 'Expired invitation cannot be consumed (rejected)');
 
-  // 5. CustomerPortal.jsx Source Code Audit
+  // 5. Source Code Hardening Audits
   console.log('\n--- 5. Source Code Hardening Audits ---');
   const portalFilePath = path.resolve('frontend/src/pages/portal/CustomerPortal.jsx');
   const portalCode = fs.readFileSync(portalFilePath, 'utf-8');
   assert(!portalCode.includes('customers[0]'), 'Insecure fallback customers[0] is absent from CustomerPortal.jsx');
   assert(portalCode.includes('Portal Account Not Linked'), 'Safe blocking UI present for unlinked accounts');
+
+  const loginFilePath = path.resolve('frontend/src/pages/auth/Login.jsx');
+  const loginCode = fs.readFileSync(loginFilePath, 'utf-8');
+  assert(!loginCode.includes('demoAccounts'), 'Demo accounts configuration array removed from Login.jsx');
+  assert(!loginCode.includes("'123456'"), 'Hardcoded tester password removed from Login.jsx');
+  assert(loginCode.includes("const [email, setEmail] = useState('');"), 'Login email state initializes completely blank');
+  assert(loginCode.includes("const [password, setPassword] = useState('');"), 'Login password state initializes completely blank');
+  assert(loginCode.includes('/api/v1/auth/forgot-password'), 'Forgot password workflow connected in Login.jsx');
+  assert(loginCode.includes('/api/v1/auth/reset-password'), 'Reset password workflow connected in Login.jsx');
 
   const customerControllerPath = path.resolve('backend/src/controllers/customer.controller.js');
   const customerCtrlCode = fs.readFileSync(customerControllerPath, 'utf-8');
@@ -217,6 +226,20 @@ async function runPhase2SecurityVerification() {
   assert(authCtrlCode.includes('updateMany'), 'Atomic conditional updateMany status transition enforced in register');
   assert(authCtrlCode.includes('INVITATION_ALREADY_USED'), 'INVITATION_ALREADY_USED error code returned on reuse');
   assert(authCtrlCode.includes('INVITATION_REVOKED'), 'INVITATION_REVOKED error code returned on revoked token');
+  assert(authCtrlCode.includes('INVITATION_REQUIRED'), 'INVITATION_REQUIRED enforced on register without invitation');
+  assert(authCtrlCode.includes('forgotPassword'), 'forgotPassword controller exported in auth.controller.js');
+  assert(authCtrlCode.includes('resetPassword'), 'resetPassword controller exported in auth.controller.js');
+
+  // Password reset schemas validation
+  const forgotValid = forgotPasswordSchema.safeParse({ email: 'client@example.co.uk' });
+  assert(forgotValid.success, 'Valid email accepted by forgotPasswordSchema');
+  const forgotInvalid = forgotPasswordSchema.safeParse({ email: 'invalid-email' });
+  assert(!forgotInvalid.success, 'Invalid email rejected by forgotPasswordSchema');
+
+  const resetValid = resetPasswordSchema.safeParse({ token: 'secure-reset-token-sample-12345', newPassword: 'newValidPassword123' });
+  assert(resetValid.success, 'Valid payload accepted by resetPasswordSchema');
+  const resetShortPw = resetPasswordSchema.safeParse({ token: 'secure-reset-token-sample-12345', newPassword: '123' });
+  assert(!resetShortPw.success, 'Short password (< 6 chars) rejected by resetPasswordSchema');
 
   // 6. Database-Backed Endpoints Test (Live HTTP)
   console.log('\n--- 6. Database-Backed Endpoint Verification ---');
@@ -228,8 +251,8 @@ async function runPhase2SecurityVerification() {
     const port = server.address().port;
 
     try {
-      // Test invalid invitation token returns 400
-      const res = await fetch(`http://localhost:${port}/api/v1/auth/register`, {
+      // 6.1 Test invalid invitation token returns 400 INVALID_INVITATION
+      const resBadToken = await fetch(`http://localhost:${port}/api/v1/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -239,8 +262,44 @@ async function runPhase2SecurityVerification() {
           invitationToken: 'bad.token.signature',
         }),
       });
-      const data = await res.json();
-      assert(res.status === 400 && data.code === 'INVALID_INVITATION', 'Invalid registration token returns 400 INVALID_INVITATION');
+      const dataBadToken = await resBadToken.json();
+      assert(resBadToken.status === 400 && dataBadToken.code === 'INVALID_INVITATION', 'Invalid registration token returns 400 INVALID_INVITATION');
+
+      // 6.2 Test registration without invitation token returns 400 INVITATION_REQUIRED
+      const resNoToken = await fetch(`http://localhost:${port}/api/v1/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Unauthorized User',
+          email: 'unauthorized@test.com',
+          password: 'password123',
+        }),
+      });
+      const dataNoToken = await resNoToken.json();
+      assert(resNoToken.status === 400 && dataNoToken.code === 'INVITATION_REQUIRED', 'Registration without invitation token returns 400 INVITATION_REQUIRED');
+
+      // 6.3 Test forgot password endpoint returns generic 200 (anti-enumeration)
+      const resForgot = await fetch(`http://localhost:${port}/api/v1/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'nonexistent-user@nowhere.co.uk',
+        }),
+      });
+      const dataForgot = await resForgot.json();
+      assert(resForgot.status === 200 && dataForgot.status === 'ok' && dataForgot.message?.includes('dispatched'), 'Forgot password returns generic 200 success for unrecognised email (anti-enumeration)');
+
+      // 6.4 Test reset password with invalid token returns 400 INVALID_OR_EXPIRED_TOKEN
+      const resReset = await fetch(`http://localhost:${port}/api/v1/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: 'invalid-nonexistent-token-1234567890',
+          newPassword: 'myNewValidPassword123!',
+        }),
+      });
+      const dataReset = await resReset.json();
+      assert(resReset.status === 400 && dataReset.code === 'INVALID_OR_EXPIRED_TOKEN', 'Reset password with non-existent token returns 400 INVALID_OR_EXPIRED_TOKEN');
     } finally {
       server.close();
     }

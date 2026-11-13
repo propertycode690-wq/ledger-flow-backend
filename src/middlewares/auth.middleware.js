@@ -335,3 +335,67 @@ export async function requireTermsAcceptance(req, res, next) {
   }
 }
 
+/**
+ * In-memory sliding-window rate limiter for sensitive authentication endpoints.
+ * Lightweight, zero-dependency, safe against memory leaks.
+ */
+export function createRateLimiter({ windowMs = 15 * 60 * 1000, max = 5, message = 'Too many requests. Please try again later.' }) {
+  const attempts = new Map();
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, record] of attempts.entries()) {
+      if (now - record.startTime > windowMs) {
+        attempts.delete(key);
+      }
+    }
+  }, 5 * 60 * 1000).unref();
+
+  return (req, res, next) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown-client';
+    const clientKey = `${ip}:${req.baseUrl || ''}${req.path || ''}`;
+    const now = Date.now();
+
+    const record = attempts.get(clientKey);
+
+    if (!record || (now - record.startTime > windowMs)) {
+      attempts.set(clientKey, { count: 1, startTime: now });
+      return next();
+    }
+
+    record.count += 1;
+
+    if (record.count > max) {
+      const retryAfterSec = Math.ceil((record.startTime + windowMs - now) / 1000);
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        status: 'error',
+        code: 'RATE_LIMIT_EXCEEDED',
+        message,
+        retryAfter: retryAfterSec,
+      });
+    }
+
+    next();
+  };
+}
+
+export const loginLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many login attempts from this address. Please wait a few minutes before trying again.',
+});
+
+export const forgotPasswordLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many password reset requests. Please wait a few minutes before requesting another link.',
+});
+
+export const resetPasswordLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many password reset submissions. Please wait a few minutes before trying again.',
+});
+
+

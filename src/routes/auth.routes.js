@@ -1,13 +1,33 @@
 import { Router } from 'express';
-import { login, me, logout, register, loginSchema, registerSchema } from '../controllers/auth.controller.js';
-import { requireAuth, requireRole, enforceCustomerScope } from '../middlewares/auth.middleware.js';
+import {
+  login,
+  me,
+  logout,
+  register,
+  forgotPassword,
+  resetPassword,
+  loginSchema,
+  registerSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from '../controllers/auth.controller.js';
+import {
+  requireAuth,
+  requireRole,
+  enforceCustomerScope,
+  loginLimiter,
+  forgotPasswordLimiter,
+  resetPasswordLimiter,
+} from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
 
 const router = Router();
 
-// Core Authentication Endpoints
-router.post('/login', validateBody(loginSchema), login);
+// Core Authentication & Password Management Endpoints
+router.post('/login', loginLimiter, validateBody(loginSchema), login);
 router.post('/register', validateBody(registerSchema), register);
+router.post('/forgot-password', forgotPasswordLimiter, validateBody(forgotPasswordSchema), forgotPassword);
+router.post('/reset-password', resetPasswordLimiter, validateBody(resetPasswordSchema), resetPassword);
 router.get('/me', requireAuth, me);
 router.post('/logout', requireAuth, logout);
 

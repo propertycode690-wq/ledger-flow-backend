@@ -5,6 +5,7 @@ import prisma from '../config/db.js';
 import { generateToken, verifyToken, authCookieOptions } from '../utils/token.js';
 import { getEffectivePermissions } from '../utils/permissions.js';
 import { logAuditEvent } from '../utils/auditLogger.js';
+import { sendPasswordResetEmail } from '../services/email.service.js';
 
 export const loginSchema = z.object({
   email: z.string().trim().email('A valid email address is required.'),
@@ -19,6 +20,15 @@ export const registerSchema = z.object({
   customerId: z.string().trim().max(50).optional().nullable(),
   verificationSecret: z.string().trim().max(100).optional().nullable(),
   acceptTerms: z.boolean().optional().default(false),
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email('A valid email address is required.').max(255),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().trim().min(20, 'Password reset token is required.'),
+  newPassword: z.string().min(6, 'Password must be at least 6 characters.').max(100),
 });
 
 /**
@@ -395,233 +405,15 @@ export async function register(req, res) {
 
       newUser = txResult.user;
       consumedInvitationId = txResult.invitationId;
-    }
-    // 3. Verification Method B: Account Credentials Challenge (CustomerID + Invoice / Tax reference)
-    else if (customerId && customerId.trim() !== '' && verificationSecret && verificationSecret.trim() !== '') {
-      const cleanCustomerId = customerId.trim();
-      const cleanSecret = verificationSecret.trim();
-
-      targetCustomer = await prisma.customer.findUnique({
-        where: { id: cleanCustomerId },
-      });
-
-      if (!targetCustomer || targetCustomer.status !== 'Active') {
-        return res.status(400).json({
-          status: 'error',
-          code: 'VERIFICATION_FAILED',
-          message: 'Account verification failed. Please check your Customer ID and verification details.',
-        });
-      }
-
-      // Verify secret against customer records
-      const normalizedSecret = cleanSecret.replace(/\s+/g, '').toUpperCase();
-      const customerVat = (targetCustomer.vatNumber || '').replace(/\s+/g, '').toUpperCase();
-      const customerAddr = (targetCustomer.address || '').toUpperCase();
-
-      let isVerified = false;
-
-      // Match VAT number
-      if (customerVat && customerVat === normalizedSecret) {
-        isVerified = true;
-      }
-      // Match billing postal code or address snippet
-      else if (customerAddr && customerAddr.includes(normalizedSecret)) {
-        isVerified = true;
-      }
-      // Match recent issued invoice number
-      else {
-        const matchingInvoice = await prisma.invoice.findFirst({
-          where: {
-            customerId: targetCustomer.id,
-            invoiceNumber: cleanSecret,
-            status: { notIn: ['Draft', 'Void'] },
-          },
-        });
-        if (matchingInvoice) {
-          isVerified = true;
-        }
-      }
-
-      if (!isVerified) {
-        return res.status(400).json({
-          status: 'error',
-          code: 'VERIFICATION_FAILED',
-          message: 'Account verification failed. The invoice reference or postal code provided does not match our records.',
-        });
-      }
-
-      // Mandatory Terms & Conditions acceptance verification
-      if (activeTerms && req.validatedBody.acceptTerms !== true) {
-        return res.status(400).json({
-          status: 'error',
-          code: 'TERMS_ACCEPTANCE_REQUIRED',
-          message: 'You must review and accept the Customer Terms & Conditions to complete registration.',
-          termsVersion: {
-            id: activeTerms.id,
-            version: activeTerms.version,
-            title: activeTerms.title,
-          },
-        });
-      }
-
-      const passwordHash = await bcrypt.hash(password, 12);
-
-      const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
-      const userAgent = (req.headers['user-agent'] || '').slice(0, 255) || null;
-
-      newUser = await prisma.$transaction(async (tx) => {
-        const created = await tx.user.create({
-          data: {
-            email: normalizedEmail,
-            passwordHash,
-            role: 'customer',
-            name: name.trim(),
-            title: 'Customer Client',
-            customerId: targetCustomer.id,
-            permissions: [],
-            isActive: true,
-          },
-          include: {
-            customer: {
-              select: {
-                id: true,
-                name: true,
-                contactPerson: true,
-                email: true,
-                status: true,
-              },
-            },
-          },
-        });
-
-        if (activeTerms) {
-          await tx.customerTermsAcceptance.create({
-            data: {
-              termsVersionId: activeTerms.id,
-              customerId: targetCustomer.id,
-              userId: created.id,
-              versionString: activeTerms.version,
-              acceptanceMethod: 'registration',
-              ipAddress: typeof clientIp === 'string' ? clientIp.slice(0, 45) : null,
-              userAgent,
-            },
-          });
-        }
-
-        return created;
-      });
     } else {
-      // 3. Verification Method C: Auto-Match by Email or Auto-Provision New Customer
-      targetCustomer = await prisma.customer.findFirst({
-        where: {
-          email: normalizedEmail,
-          status: 'Active',
-        },
-      });
-
-      let isNewCustomer = false;
-      let newCustomerData = null;
-
-      if (!targetCustomer) {
-        // Auto-provision a new customer record for this client
-        const lastCustomer = await prisma.customer.findFirst({
-          where: { id: { startsWith: 'CUST-' } },
-          orderBy: { id: 'desc' },
-        });
-
-        let nextCustomerId = 'CUST-001';
-        if (lastCustomer) {
-          const match = lastCustomer.id.match(/^CUST-(\d+)$/);
-          if (match) {
-            const nextSeq = parseInt(match[1], 10) + 1;
-            nextCustomerId = `CUST-${String(nextSeq).padStart(3, '0')}`;
-          }
-        }
-
-        isNewCustomer = true;
-        newCustomerData = {
-          id: nextCustomerId,
-          name: name.trim(),
-          contactPerson: name.trim(),
-          email: normalizedEmail,
-          status: 'Active',
-          openingBalance: 0,
-          paymentTerms: 14,
-        };
-      }
-
-      // Mandatory Terms & Conditions acceptance verification
-      if (activeTerms && req.validatedBody.acceptTerms !== true) {
-        return res.status(400).json({
-          status: 'error',
-          code: 'TERMS_ACCEPTANCE_REQUIRED',
-          message: 'You must review and accept the Customer Terms & Conditions to complete registration.',
-          termsVersion: {
-            id: activeTerms.id,
-            version: activeTerms.version,
-            title: activeTerms.title,
-          },
-        });
-      }
-
-      const passwordHash = await bcrypt.hash(password, 12);
-      const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
-      const userAgent = (req.headers['user-agent'] || '').slice(0, 255) || null;
-
-      newUser = await prisma.$transaction(async (tx) => {
-        let customerIdToLink = targetCustomer ? targetCustomer.id : null;
-
-        if (isNewCustomer && newCustomerData) {
-          const createdCustomer = await tx.customer.create({
-            data: newCustomerData,
-          });
-          targetCustomer = createdCustomer;
-          customerIdToLink = createdCustomer.id;
-        }
-
-        const created = await tx.user.create({
-          data: {
-            email: normalizedEmail,
-            passwordHash,
-            role: 'customer',
-            name: name.trim(),
-            title: 'Customer Client',
-            customerId: customerIdToLink,
-            permissions: [],
-            isActive: true,
-          },
-          include: {
-            customer: {
-              select: {
-                id: true,
-                name: true,
-                contactPerson: true,
-                email: true,
-                status: true,
-              },
-            },
-          },
-        });
-
-        if (activeTerms) {
-          await tx.customerTermsAcceptance.create({
-            data: {
-              termsVersionId: activeTerms.id,
-              customerId: customerIdToLink,
-              userId: created.id,
-              versionString: activeTerms.version,
-              acceptanceMethod: 'registration',
-              ipAddress: typeof clientIp === 'string' ? clientIp.slice(0, 45) : null,
-              userAgent,
-            },
-          });
-        }
-
-        return created;
+      return res.status(400).json({
+        status: 'error',
+        code: 'INVITATION_REQUIRED',
+        message: 'A valid administrator invitation is required to register a customer portal account. Please contact an administrator to receive an invitation link.',
       });
     }
 
-    // 4. Record security audit log (tokens and secrets are strictly excluded)
+    // 3. Record security audit log (tokens and secrets are strictly excluded)
     await logAuditEvent({
       action: 'CUSTOMER_SELF_REGISTERED',
       entityType: 'User',
@@ -632,13 +424,7 @@ export async function register(req, res) {
       details: {
         customerId: targetCustomer.id,
         customerName: targetCustomer.name,
-        verificationMethod: invitationToken
-          ? 'invitation_token'
-          : customerId
-          ? 'account_challenge'
-          : targetCustomer
-          ? 'email_match_or_auto_provision'
-          : 'self_registration',
+        verificationMethod: 'invitation_token',
         invitationId: consumedInvitationId || null,
         termsVersion: activeTerms ? activeTerms.version : null,
       },
@@ -700,6 +486,210 @@ export async function register(req, res) {
       status: 'error',
       code: 'INTERNAL_ERROR',
       message: 'An error occurred during account registration. Please try again later.',
+    });
+  }
+}
+
+/**
+ * @route   POST /api/v1/auth/forgot-password
+ * @desc    Request a secure password reset link (anti-enumeration protected)
+ * @access  Public
+ */
+export async function forgotPassword(req, res) {
+  const { email } = req.validatedBody;
+  const normalizedEmail = email.toLowerCase().trim();
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    // Anti-enumeration: Return the same generic success response whether user exists or not
+    const genericResponse = {
+      status: 'ok',
+      message: 'If an account exists with that email address, a password reset link has been dispatched.',
+    };
+
+    if (!user || !user.isActive) {
+      return res.status(200).json(genericResponse);
+    }
+
+    // Generate high-entropy 32-byte cryptographically secure token (64 hex characters)
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 minutes expiry
+
+    const clientIp = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+    const userAgent = (req.headers['user-agent'] || '').slice(0, 255) || null;
+
+    // Invalidate any existing pending reset tokens for this user
+    await prisma.passwordResetToken.updateMany({
+      where: {
+        userId: user.id,
+        status: 'pending',
+      },
+      data: { status: 'revoked' },
+    });
+
+    // Store token SHA-256 hash (never raw token)
+    await prisma.passwordResetToken.create({
+      data: {
+        tokenHash,
+        userId: user.id,
+        status: 'pending',
+        expiresAt,
+        ipAddress: typeof clientIp === 'string' ? clientIp.slice(0, 45) : null,
+        userAgent,
+      },
+    });
+
+    await logAuditEvent({
+      action: 'PASSWORD_RESET_REQUESTED',
+      entityType: 'User',
+      entityId: user.id,
+      userId: user.id,
+      userEmail: user.email,
+      userRole: user.role,
+      details: { email: user.email, expiresAt: expiresAt.toISOString() },
+      req,
+    });
+
+    // Outbound email dispatch via Resend
+    try {
+      await sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        resetToken: rawToken,
+      });
+      console.log(`[Auth] Password reset email successfully dispatched to ${user.email}.`);
+    } catch (emailError) {
+      if (emailError.code === 'MISSING_API_KEY') {
+        console.error('[Auth] Password reset email skipped: RESEND_API_KEY is not configured.');
+        return res.status(500).json({
+          status: 'error',
+          code: 'EMAIL_CONFIG_MISSING',
+          message: 'Email service is not configured. Please contact an administrator.',
+        });
+      }
+
+      console.error(`[Auth] Failed to send password reset email to ${user.email}: ${emailError.message}`);
+      return res.status(502).json({
+        status: 'error',
+        code: 'EMAIL_DELIVERY_FAILED',
+        message: 'Unable to deliver password reset email. Please try again later or contact an administrator.',
+      });
+    }
+
+    // Return generic success response (raw token is never exposed in HTTP response)
+    return res.status(200).json(genericResponse);
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return res.status(500).json({
+      status: 'error',
+      code: 'INTERNAL_ERROR',
+      message: 'An error occurred while processing your request. Please try again later.',
+    });
+  }
+}
+
+/**
+ * @route   POST /api/v1/auth/reset-password
+ * @desc    Reset password using single-use secure reset token
+ * @access  Public
+ */
+export async function resetPassword(req, res) {
+  const { token, newPassword } = req.validatedBody;
+  const cleanToken = token.trim();
+
+  try {
+    const tokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+
+    const resetRecord = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!resetRecord) {
+      return res.status(400).json({
+        status: 'error',
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'The password reset link is invalid or has expired. Please request a new one.',
+      });
+    }
+
+    if (resetRecord.status === 'used') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'TOKEN_ALREADY_USED',
+        message: 'This password reset link has already been used. Please request a new one.',
+      });
+    }
+
+    if (resetRecord.status !== 'pending' || new Date(resetRecord.expiresAt) < new Date()) {
+      return res.status(400).json({
+        status: 'error',
+        code: 'TOKEN_EXPIRED',
+        message: 'This password reset link has expired. Please request a new one.',
+      });
+    }
+
+    if (!resetRecord.user || !resetRecord.user.isActive) {
+      return res.status(400).json({
+        status: 'error',
+        code: 'ACCOUNT_DISABLED',
+        message: 'The associated user account is inactive or disabled. Please contact an administrator.',
+      });
+    }
+
+    // Hash new password using bcrypt (12 rounds)
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    // Atomic transaction: update password, mark token as used, revoke any other pending tokens
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: resetRecord.userId },
+        data: { passwordHash },
+      });
+
+      await tx.passwordResetToken.update({
+        where: { id: resetRecord.id },
+        data: {
+          status: 'used',
+          usedAt: new Date(),
+        },
+      });
+
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: resetRecord.userId,
+          status: 'pending',
+          id: { not: resetRecord.id },
+        },
+        data: { status: 'revoked' },
+      });
+    });
+
+    await logAuditEvent({
+      action: 'PASSWORD_RESET_COMPLETED',
+      entityType: 'User',
+      entityId: resetRecord.userId,
+      userId: resetRecord.userId,
+      userEmail: resetRecord.user.email,
+      userRole: resetRecord.user.role,
+      details: { email: resetRecord.user.email },
+      req,
+    });
+
+    return res.status(200).json({
+      status: 'ok',
+      message: 'Your password has been successfully reset. You may now sign in with your new password.',
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({
+      status: 'error',
+      code: 'INTERNAL_ERROR',
+      message: 'An error occurred while resetting your password. Please try again later.',
     });
   }
 }
